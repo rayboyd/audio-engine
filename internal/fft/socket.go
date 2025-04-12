@@ -57,12 +57,14 @@ func NewWebSocketTransport(port string) *WebSocketTransport {
 	}
 
 	// Start the server in its own goroutine
-	go func() {
-		log.Printf("FFT WebSocket server listening on port %s", port)
-		if err := t.server.ListenAndServe(); err != http.ErrServerClosed {
-			log.Printf("WebSocket server error: %v", err)
-		}
-	}()
+	if port != "0" && port != "" {
+		go func() {
+			log.Printf("FFT WebSocket server listening on port %s", port)
+			if err := t.server.ListenAndServe(); err != http.ErrServerClosed {
+				log.Printf("WebSocket server error: %v", err)
+			}
+		}()
+	}
 
 	return t
 }

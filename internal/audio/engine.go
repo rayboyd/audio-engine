@@ -5,6 +5,7 @@ import (
 	"audio/internal/fft"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"runtime"
 	"sync/atomic"
@@ -184,6 +185,7 @@ func (e *Engine) StopInputStream() error {
 func (e *Engine) processInputStream(in []int32) {
 	// Lock this goroutine to the current OS thread to prevent migration
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
 	// --- process audio buffer
 
@@ -298,12 +300,12 @@ func (e *Engine) SetGateThreshold(threshold float64) {
 
 	// Convert from percentage to absolute value
 	// int32 max value is 2147483647
-	e.gateThreshold = int32(threshold * 2147483647) // what is the hit with main.MaxInt32?
+	e.gateThreshold = int32(threshold * float64(math.MaxInt32)) // what is the hit with main.MaxInt32?
 }
 
 // GetGateThreshold returns the current threshold as a percentage (0.0-1.0)
 func (e *Engine) GetGateThreshold() float64 {
-	return float64(e.gateThreshold) / 2147483647 // what is the hit with main.MaxInt32?
+	return float64(e.gateThreshold) / float64(math.MaxInt32) // what is the hit with main.MaxInt32?
 }
 
 // Recording Operations

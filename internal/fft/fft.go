@@ -111,7 +111,7 @@ func (p *Processor) Process(buffer []int32) {
 	}
 
 	// Perform FFT using Gonum
-	p.buffer = p.fftObj.Coefficients(p.buffer, p.realInput)
+	_ = p.fftObj.Coefficients(p.buffer, p.realInput)
 
 	// Calculate magnitude spectrum with logarithmic scaling and conversion to dB
 	for i := 0; i < len(p.buffer); i++ {
