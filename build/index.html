@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Spectrum Analyzer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #111;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .visualization {
+            display: flex;
+            flex: 1;
+            align-items: flex-end;
+            padding: 20px 40px;
+            box-sizing: border-box;
+            position: relative;
+            gap: 4px;
+            /* Add explicit gap between items */
+            flex-wrap: nowrap;
+            /* Prevent wrapping */
+        }
+
+        .info {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 40px;
+            color: #0ff;
+            font-size: 14px;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .bar-container {
+            position: relative;
+            flex: 1;
+            min-width: 10px;
+            /* Ensure minimum width */
+            max-width: 60px;
+            /* Limit maximum width */
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .bar {
+            width: 80%;
+            /* Slightly narrower than container */
+            background: cyan;
+            transition: height 0.05s ease-out;
+            border-radius: 2px 2px 0 0;
+            box-shadow: 0 0 8px rgba(0, 255, 255, 0.6);
+        }
+
+        .frequency {
+            font-size: 10px;
+            color: #0ff;
+            text-align: center;
+            opacity: 0.6;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="visualization" id="visualization">
+            <!-- Bars will be added here -->
+        </div>
+        <div style="padding: 10px; text-align: center; color: #0ff;">
+            Spectrum Analyzer | FFT Bands: <span id="band-count">0</span>
+        </div>
+    </div>
+
+    <script>
+        // Define the frequencies for different band counts
+        const frequencyLabels = {
+            6: ['40Hz', '120Hz', '400Hz', '1.2kHz', '4kHz', '15kHz'],
+            12: ['20Hz', '60Hz', '120Hz', '250Hz', '500Hz', '1kHz',
+                '2kHz', '4kHz', '6kHz', '10kHz', '16kHz', '20kHz'],
+            24: [
+                '20Hz', '30Hz', '40Hz', '60Hz', '90Hz',
+                '120Hz', '180Hz', '250Hz', '350Hz', '500Hz',
+                '700Hz', '1kHz', '1.4kHz', '1.8kHz', '2.5kHz',
+                '3.5kHz', '5kHz', '7kHz', '10kHz', '14kHz',
+                '16kHz', '18kHz', '20kHz', '22kHz'
+            ]
+        };
+
+        // Create elements
+        const container = document.getElementById('visualization');
+        const bandCountElement = document.getElementById('band-count');
+        const bars = [];
+        const peaks = [];
+        const decayRate = 0.98;
+
+        // Connect to WebSocket
+        const socket = new WebSocket('ws://localhost:8080/fft');
+
+        function createBars(numBands) {
+            console.log(`Creating ${numBands} bands`);
+
+            // Clear existing visualization
+            container.innerHTML = '';
+
+            // Add info header
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'info';
+            infoDiv.innerHTML = '<div>LOW</div><div>MID</div><div>HIGH</div>';
+            container.appendChild(infoDiv);
+
+            // Clear arrays
+            bars.length = 0;
+            peaks.length = 0;
+
+            // Update band count display
+            bandCountElement.textContent = numBands;
+
+            // Select frequency labels based on band count
+            const frequencies = frequencyLabels[numBands] ||
+                Array(numBands).fill('').map((_, i) =>
+                    `${Math.round(20 * Math.pow(1000, i / numBands))}Hz`
+                );
+
+            // Create all bars at once
+            const fragment = document.createDocumentFragment();
+
+            for (let i = 0; i < numBands; i++) {
+                // Create bar container
+                const barContainer = document.createElement('div');
+                barContainer.className = 'bar-container';
+                barContainer.style.backgroundColor = `rgba(0, 10, 20, 0.2)`; // Subtle background
+
+                // Create bar
+                const bar = document.createElement('div');
+                bar.className = 'bar';
+                bar.style.height = '0%';
+
+                // Create frequency label
+                const freqLabel = document.createElement('div');
+                freqLabel.className = 'frequency';
+                freqLabel.textContent = frequencies[i] || '';
+
+                // Add to container
+                barContainer.appendChild(bar);
+                barContainer.appendChild(freqLabel);
+                fragment.appendChild(barContainer);
+                bars.push(bar);
+                peaks.push(0);
+            }
+
+            container.appendChild(fragment);
+        }
+
+        // Calculate frequency-dependent color
+        function getBarColor(index, value, numBands) {
+            // Blue to Cyan to Green to Yellow to Red
+            const normalizedIndex = index / (numBands - 1);
+            let r, g, b;
+
+            if (normalizedIndex < 0.25) {
+                // Blue to Cyan
+                r = 0;
+                g = Math.floor(255 * normalizedIndex * 4);
+                b = 255;
+            } else if (normalizedIndex < 0.5) {
+                // Cyan to Green
+                r = 0;
+                g = 255;
+                b = Math.floor(255 * (1 - (normalizedIndex - 0.25) * 4));
+            } else if (normalizedIndex < 0.75) {
+                // Green to Yellow
+                r = Math.floor(255 * (normalizedIndex - 0.5) * 4);
+                g = 255;
+                b = 0;
+            } else {
+                // Yellow to Red
+                r = 255;
+                g = Math.floor(255 * (1 - (normalizedIndex - 0.75) * 4));
+                b = 0;
+            }
+
+            // Apply value intensity
+            const intensity = Math.max(0.3, value);
+            r = Math.floor(r * intensity);
+            g = Math.floor(g * intensity);
+            b = Math.floor(b * intensity);
+
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        socket.onmessage = function (event) {
+            try {
+                // Data is already normalized and grouped into bands
+                const bandData = JSON.parse(event.data);
+
+                // If first message or bands changed, recreate visualization
+                if (bars.length !== bandData.length) {
+                    createBars(bandData.length);
+                }
+
+                // Debug log periodically
+                if (Math.random() < 0.01) {
+                    console.log(`Updating ${bandData.length} bands with values:`,
+                        bandData.map(v => Math.round(v * 100) / 100));
+                }
+
+                // Update all bars
+                for (let i = 0; i < bars.length && i < bandData.length; i++) {
+                    const value = bandData[i];
+
+                    // Update peak with decay
+                    peaks[i] = Math.max(value, peaks[i] * decayRate);
+
+                    // Set height as percentage
+                    const height = `${Math.max(1, Math.min(100, value * 100))}%`;
+                    bars[i].style.height = height;
+
+                    // Set color based on frequency and value
+                    bars[i].style.backgroundColor = getBarColor(i, value, bandData.length);
+
+                    // Add glow effect based on value
+                    const glowIntensity = Math.min(15, Math.floor(value * 15));
+                    bars[i].style.boxShadow = `0 0 ${glowIntensity}px rgba(0, 255, 255, ${value * 0.8})`;
+                }
+            } catch (e) {
+                console.error('Error processing FFT data:', e);
+                console.error(e.stack);
+            }
+        };
+
+        socket.onopen = function () {
+            console.log("WebSocket connected");
+        };
+
+        socket.onerror = function (error) {
+            console.error("WebSocket error:", error);
+        };
+
+        socket.onclose = function () {
+            console.log("WebSocket disconnected, attempting to reconnect...");
+            setTimeout(function () {
+                socket = new WebSocket('ws://localhost:8080/fft');
+                // Reattach event handlers
+            }, 1000);
+        };
+    </script>
+</body>
+
+</html>
