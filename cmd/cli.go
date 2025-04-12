@@ -63,10 +63,6 @@ func ParseArgs() (*config.Config, error) {
 	rootCmd.PersistentFlags().BoolVarP(&options.LowLatency, "low-latency", "l", config.DefaultLowLatency,
 		"Use low latency mode for real-time processing")
 
-	// Analysis Configuration
-	rootCmd.PersistentFlags().IntVarP(&options.FFTBands, "bands", "f", config.DefaultFFTBands,
-		"Number of frequency bands for FFT visualization (default: 12)")
-
 	// Recording Configuration
 	rootCmd.PersistentFlags().BoolVarP(&options.RecordInputStream, "record", "r", config.DefaultRecordInputStream,
 		"Record audio from the specified input device")

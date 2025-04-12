@@ -1,5 +1,6 @@
 .DS_Store
-fft.test
-mem.prof
+*.test
+*.wav
+*.prof
 /build/grec
 /logs

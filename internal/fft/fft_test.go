@@ -8,7 +8,7 @@ import (
 // TestFFTHotPath tests the core FFT processing for zero allocations
 func TestFFTHotPath(t *testing.T) {
 	// Create a simple processor with nil transport to avoid any network code
-	processor := NewProcessor(1024, 44100, nil, 12)
+	processor := NewProcessor(1024, 44100, nil)
 
 	// Create test buffer
 	buffer := make([]int32, 1024)
@@ -39,7 +39,7 @@ func TestFFTHotPath(t *testing.T) {
 
 // TestGetFrequencyBinZeroAllocs verifies that frequency bin mapping has no allocations
 func TestGetFrequencyBinZeroAllocs(t *testing.T) {
-	processor := NewProcessor(1024, 44100, nil, 12)
+	processor := NewProcessor(1024, 44100, nil)
 
 	// Test multiple bin calculations for zero allocations
 	allocs := testing.AllocsPerRun(100, func() {
@@ -57,7 +57,7 @@ func TestGetFrequencyBinZeroAllocs(t *testing.T) {
 
 // BenchmarkFastFourierTransform measures performance with allocation reporting
 func BenchmarkFastFourierTransform(b *testing.B) {
-	processor := NewProcessor(1024, 44100, nil, 12)
+	processor := NewProcessor(1024, 44100, nil)
 	buffer := make([]int32, 1024)
 
 	// Generate test signal (sine wave with harmonics)
@@ -86,7 +86,7 @@ func BenchmarkFastFourierTransform(b *testing.B) {
 
 // BenchmarkFFTProcessing benchmarks just the core FFT computation
 func BenchmarkFFTProcessing(b *testing.B) {
-	processor := NewProcessor(1024, 44100, nil, 12)
+	processor := NewProcessor(1024, 44100, nil)
 	buffer := make([]int32, 1024)
 
 	// Generate a realistic audio signal (sine wave)

@@ -14,7 +14,6 @@ const (
 	DefaultOutputFile        = ""          // Auto-generated filename
 	DefaultCommand           = ""          // No command by default
 	DefaultVerbosity         = false       // Quiet operation
-	DefaultFFTBands          = 12          // Number of frequency bands
 
 	// Hardware and processing limits
 	MinDeviceID     = -1     // -1 represents system default device
@@ -65,6 +64,5 @@ func NewConfig() *Config {
 		OutputFile:        DefaultOutputFile,
 		Command:           DefaultCommand,
 		Verbose:           DefaultVerbosity,
-		FFTBands:          DefaultFFTBands,
 	}
 }

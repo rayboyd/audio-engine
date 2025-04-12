@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spectrum Analyzer (WebGL)</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            color: #eee;
+            font-family: system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            display: block;
+            background-color: #1a1a1a;
+            /* Let JS control width/height */
+        }
+
+        .info-bar {
+            padding: 10px;
+            text-align: center;
+            color: #0ff;
+            font-size: 14px;
+            width: 90%;
+            max-width: 1200px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="visualizerCanvasGL"></canvas>
+    <div class="info-bar">
+        WebGL Analyzer | FFT Bands: <span id="band-count">0</span> | Status: <span id="ws-status">Connecting...</span>
+    </div>
+
+    <!-- Vertex Shader -->
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        // Attributes for each instance (each bar)
+        attribute float a_bandIndex; // Index of this frequency band (0, 1, 2...)
+        attribute float a_fftValue;  // Current FFT value for this band (0.0 to 1.0)
+
+        // Attributes for the base quad vertices (shared by all instances)
+        attribute vec2 a_position; // Vertex position for the quad (-0.5 to 0.5)
+
+        // Uniforms (global values for all instances)
+        uniform float u_numBands;
+        uniform vec2 u_resolution; // Canvas resolution (width, height)
+
+        // Varying to pass color to fragment shader
+        varying vec3 v_color;
+
+        // Simple color function (similar to JS one)
+        vec3 getBarColor(float index, float value, float totalBars) {
+            float numBands = max(1.0, totalBars);
+            float normalizedIndex = (numBands == 1.0) ? 0.0 : index / (numBands - 1.0);
+            float r, g, b;
+
+            if (normalizedIndex < 0.25) { // Blue to Cyan
+                r = 0.0; g = normalizedIndex * 4.0; b = 1.0;
+            } else if (normalizedIndex < 0.5) { // Cyan to Green
+                r = 0.0; g = 1.0; b = 1.0 - (normalizedIndex - 0.25) * 4.0;
+            } else if (normalizedIndex < 0.75) { // Green to Yellow
+                r = (normalizedIndex - 0.5) * 4.0; g = 1.0; b = 0.0;
+            } else { // Yellow to Red
+                r = 1.0; g = 1.0 - (normalizedIndex - 0.75) * 4.0; b = 0.0;
+            }
+
+            float intensity = max(0.3, value); // Ensure minimum brightness
+            return vec3(r * intensity, g * intensity, b * intensity);
+        }
+
+
+        void main() {
+            float barWidthPixels = u_resolution.x / u_numBands * 0.9; // 90% width
+            float barHeightPixels = max(1.0, a_fftValue * u_resolution.y);
+
+            // Scale the base quad vertex by the bar dimensions
+            vec2 scaledPosition = a_position * vec2(barWidthPixels, barHeightPixels);
+
+            // Calculate the center X position for this band
+            float barCenterX = (a_bandIndex + 0.5) * (u_resolution.x / u_numBands);
+
+            // Calculate the bottom Y position (bars grow upwards)
+            // Y=0 is bottom in clip space after conversion
+            float barBottomY = 0.0;
+            vec2 positionPixels = vec2(barCenterX, barBottomY) + scaledPosition + vec2(0.0, barHeightPixels * 0.5); // Offset Y by half height
+
+            // Convert pixel coordinates to clip space (-1.0 to 1.0)
+            vec2 zeroToOne = positionPixels / u_resolution;
+            vec2 zeroToTwo = zeroToOne * 2.0;
+            vec2 clipSpace = zeroToTwo - 1.0;
+
+            // Flip Y because clip space Y is +1 at top, -1 at bottom
+            gl_Position = vec4(clipSpace * vec2(1, 1), 0, 1);
+
+            // Calculate color based on band index and value
+            v_color = getBarColor(a_bandIndex, a_fftValue, u_numBands);
+        }
+    </script>
+
+    <!-- Fragment Shader -->
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision mediump float; // Necessary for WebGL
+
+        // Received from vertex shader
+        varying vec3 v_color;
+
+        void main() {
+            gl_FragColor = vec4(v_color, 1.0); // Output the color
+        }
+    </script>
+
+
+    <script>
+        const canvas = document.getElementById('visualizerCanvasGL');
+        // Try to get WebGL context, fall back to experimental if needed
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        const bandCountElement = document.getElementById('band-count');
+        const wsStatusElement = document.getElementById('ws-status');
+
+        // --- WebGL State ---
+        let glProgram = null;
+        let positionBuffer = null; // Buffer for quad vertices
+        let bandIndexBuffer = null; // Buffer for instance indices
+        let fftValueBuffer = null; // Buffer for instance FFT values
+        let positionAttributeLocation = -1;
+        let bandIndexAttributeLocation = -1;
+        let fftValueAttributeLocation = -1;
+        let resolutionUniformLocation = null;
+        let numBandsUniformLocation = null;
+        let numBands = 0;
+        let bandIndices = null; // Array [0, 1, 2, ...]
+        let fftValues = null; // Float32Array for FFT data
+
+        // --- Smoothing State ---
+        const smoothingFactor = 0.2; // Same as canvas version
+        let currentFFTValues = null; // Smoothed values
+
+        // --- WebSocket State ---
+        const socketUrl = 'ws://localhost:8080/fft';
+        let socket;
+        let latestBandData = null;
+        let animationFrameId = null;
+
+        // --- WebGL Initialization ---
+        function initWebGL() {
+            if (!gl) {
+                alert('WebGL is not supported by your browser.');
+                return false;
+            }
+
+            // Compile shaders
+            const vertexShaderSource = document.getElementById('vertex-shader').text;
+            const fragmentShaderSource = document.getElementById('fragment-shader').text;
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+            // Link program
+            glProgram = createProgram(gl, vertexShader, fragmentShader);
+            if (!glProgram) return false;
+
+            // Look up attribute and uniform locations
+            positionAttributeLocation = gl.getAttribLocation(glProgram, "a_position");
+            bandIndexAttributeLocation = gl.getAttribLocation(glProgram, "a_bandIndex");
+            fftValueAttributeLocation = gl.getAttribLocation(glProgram, "a_fftValue");
+            resolutionUniformLocation = gl.getUniformLocation(glProgram, "u_resolution");
+            numBandsUniformLocation = gl.getUniformLocation(glProgram, "u_numBands");
+
+            // --- Create Buffers ---
+
+            // 1. Position Buffer (for a simple quad centered at 0,0)
+            positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            const positions = [
+                -0.5, -0.5,
+                0.5, -0.5,
+                -0.5, 0.5,
+                0.5, 0.5,
+            ];
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+            // 2. Band Index Buffer (will be updated when numBands changes)
+            bandIndexBuffer = gl.createBuffer();
+            // Data will be added when numBands is known
+
+            // 3. FFT Value Buffer (will be updated each frame)
+            fftValueBuffer = gl.createBuffer();
+            // Data will be added each frame
+
+            // Enable attributes
+            gl.enableVertexAttribArray(positionAttributeLocation);
+            gl.enableVertexAttribArray(bandIndexAttributeLocation);
+            gl.enableVertexAttribArray(fftValueAttributeLocation);
+
+            // --- Setup for Instanced Drawing ---
+            // Need the ANGLE_instanced_arrays extension
+            const ext = gl.getExtension('ANGLE_instanced_arrays');
+            if (!ext) {
+                alert('ANGLE_instanced_arrays extension not supported');
+                return false;
+            }
+
+            // Tell WebGL that bandIndex and fftValue attributes are instanced
+            // void vertexAttribDivisorANGLE(GLuint index, GLuint divisor);
+            // divisor = 0 means not instanced (like a_position)
+            // divisor = 1 means advance one instance per attribute value
+            ext.vertexAttribDivisorANGLE(bandIndexAttributeLocation, 1);
+            ext.vertexAttribDivisorANGLE(fftValueAttributeLocation, 1);
+
+            return true;
+        }
+
+        // --- Shader Compilation Helpers ---
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            const success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+            if (success) {
+                return shader;
+            }
+            console.error("Shader compile error:", gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+            return null;
+        }
+
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            const success = gl.getProgramParameter(program, gl.LINK_STATUS);
+            if (success) {
+                return program;
+            }
+            console.error("Program link error:", gl.getProgramInfoLog(program));
+            gl.deleteProgram(program);
+            return null;
+        }
+
+        // --- WebSocket Connection ---
+        function connectWebSocket() {
+            console.log(`Attempting to connect to ${socketUrl}...`);
+            wsStatusElement.textContent = 'Connecting...';
+            socket = new WebSocket(socketUrl);
+
+            socket.onopen = function (event) {
+                console.log('WebSocket connection opened');
+                wsStatusElement.textContent = 'Connected';
+                resizeCanvas(); // Set initial canvas size
+                if (!animationFrameId) {
+                    drawVisualization(); // Start render loop
+                }
+            };
+
+            socket.onclose = function (event) {
+                console.log(`WebSocket connection closed (Code: ${event.code}, Reason: ${event.reason})`);
+                wsStatusElement.textContent = `Disconnected. Retrying...`;
+                latestBandData = null;
+                // Optionally clear canvas or stop rendering loop
+                // cancelAnimationFrame(animationFrameId); animationFrameId = null;
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            socket.onerror = function (error) {
+                console.error('WebSocket error:', error);
+                wsStatusElement.textContent = 'Error';
+            };
+
+            socket.onmessage = function (event) {
+                try {
+                    latestBandData = JSON.parse(event.data);
+
+                    // Update band count and related buffers if necessary
+                    if (latestBandData && latestBandData.length !== numBands) {
+                        const newNumBands = latestBandData.length;
+                        console.log("Band count changed:", newNumBands);
+                        numBands = newNumBands;
+                        bandCountElement.textContent = numBands;
+
+                        // Recreate band index data
+                        bandIndices = new Float32Array(numBands);
+                        for (let i = 0; i < numBands; ++i) {
+                            bandIndices[i] = i;
+                        }
+                        // Update band index buffer
+                        gl.bindBuffer(gl.ARRAY_BUFFER, bandIndexBuffer);
+                        gl.bufferData(gl.ARRAY_BUFFER, bandIndices, gl.STATIC_DRAW); // Indices don't change often
+
+                        // Recreate FFT value arrays
+                        fftValues = new Float32Array(numBands);
+                        currentFFTValues = new Float32Array(numBands).fill(0); // Reset smoothed values
+                    }
+
+                } catch (e) {
+                    console.error('Error processing FFT data:', e);
+                    latestBandData = null;
+                }
+            };
+        }
+
+        // --- Drawing Function (WebGL Implementation) ---
+        function drawVisualization() {
+            animationFrameId = requestAnimationFrame(drawVisualization);
+
+            if (!gl || !glProgram || !latestBandData || numBands === 0) {
+                // Optionally clear or show placeholder if not ready
+                // gl?.clearColor(0.1, 0.1, 0.1, 1.0);
+                // gl?.clear(gl.COLOR_BUFFER_BIT);
+                return;
+            }
+
+            const bandData = latestBandData;
+
+            // --- Apply Smoothing ---
+            for (let i = 0; i < numBands; i++) {
+                const targetValue = Math.max(0, Math.min(1, bandData[i] || 0));
+                currentFFTValues[i] += (targetValue - currentFFTValues[i]) * smoothingFactor;
+                fftValues[i] = currentFFTValues[i]; // Use smoothed value for drawing
+            }
+            // --- End Smoothing ---
+
+
+            // --- WebGL Drawing ---
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            gl.clearColor(0.1, 0.1, 0.1, 1.0); // Dark grey background
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            gl.useProgram(glProgram);
+
+            // --- Set Attributes ---
+
+            // 1. Position Attribute (Quad vertices)
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.vertexAttribPointer(
+                positionAttributeLocation,
+                2,         // 2 components per vertex (x, y)
+                gl.FLOAT,  // Data type
+                false,     // Normalize
+                0,         // Stride (0 = auto)
+                0          // Offset (0 = start)
+            );
+
+            // 2. Band Index Attribute (Instanced)
+            gl.bindBuffer(gl.ARRAY_BUFFER, bandIndexBuffer);
+            gl.vertexAttribPointer(
+                bandIndexAttributeLocation,
+                1,         // 1 component per instance (index)
+                gl.FLOAT,
+                false,
+                0,
+                0
+            );
+
+            // 3. FFT Value Attribute (Instanced - updated each frame)
+            gl.bindBuffer(gl.ARRAY_BUFFER, fftValueBuffer);
+            // Upload the latest (smoothed) FFT data
+            gl.bufferData(gl.ARRAY_BUFFER, fftValues, gl.DYNAMIC_DRAW); // Use DYNAMIC_DRAW for frequent updates
+            gl.vertexAttribPointer(
+                fftValueAttributeLocation,
+                1,         // 1 component per instance (value)
+                gl.FLOAT,
+                false,
+                0,
+                0
+            );
+
+            // --- Set Uniforms ---
+            gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
+            gl.uniform1f(numBandsUniformLocation, numBands);
+
+            // --- Draw Instanced ---
+            const ext = gl.getExtension('ANGLE_instanced_arrays');
+            if (ext) {
+                // void drawArraysInstancedANGLE(GLenum mode, GLint first, GLsizei count, GLsizei primcount);
+                // mode: What primitive to draw (TRIANGLE_STRIP for quads)
+                // first: Starting index in the vertex buffer (0)
+                // count: Number of vertices per instance (4 for a quad)
+                // primcount: Number of instances to draw (numBands)
+                ext.drawArraysInstancedANGLE(gl.TRIANGLE_STRIP, 0, 4, numBands);
+            } else {
+                // Fallback or error - simple WebGL doesn't have instancing built-in
+                console.error("Instancing not supported, cannot draw.");
+            }
+        }
+
+        // --- Canvas Resizing ---
+        function resizeCanvas() {
+            const desiredWidth = window.innerWidth * 0.9;
+            const desiredHeight = window.innerHeight * 0.6;
+            const width = Math.min(desiredWidth, 1200);
+            const height = desiredHeight;
+
+            // Check if the canvas size really changed to avoid unnecessary resizing
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+
+                // Adjust info bar width
+                const infoBar = document.querySelector('.info-bar');
+                if (infoBar) {
+                    infoBar.style.width = `${canvas.width}px`;
+                }
+                console.log(`WebGL Canvas resized to ${canvas.width}x${canvas.height}`);
+            }
+            // WebGL viewport is set in the draw loop, so no need to set it here
+        }
+
+        // --- Initialization ---
+        if (initWebGL()) {
+            window.addEventListener('resize', resizeCanvas);
+            connectWebSocket();
+        } else {
+            wsStatusElement.textContent = 'WebGL Init Failed';
+        }
+
+    </script>
+</body>
+
+</html>

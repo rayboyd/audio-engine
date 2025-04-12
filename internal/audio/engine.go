@@ -44,6 +44,7 @@ type Engine struct {
 
 	// FFT processing for real-time analysis
 	fftProcessor *fft.Processor // Handles FFT computation and visualization
+	fftMonoInput []int32        // Mono input buffer for FFT processing
 
 	// Noise gate for signal conditioning
 	gateEnabled   bool  // Gate state (true=enabled)
@@ -80,14 +81,16 @@ func NewEngine(config *config.Config) (engine *Engine, err error) {
 		config.FramesPerBuffer,
 		float64(config.SampleRate),
 		wsTransport,
-		config.FFTBands,
 	)
+	// Allocate mono buffer for FFT input (size = FramesPerBuffer)
+	fftMonoInput := make([]int32, config.FramesPerBuffer) // New allocation
 
 	engine = &Engine{
 		config:        config,
 		inputBuffer:   make([]int32, buffer),
 		inputDevice:   inputDevice,
 		fftProcessor:  fftProcessor,
+		fftMonoInput:  fftMonoInput,
 		gateEnabled:   true,              // Enable gate by default
 		gateThreshold: 2147483647 / 1000, // Default to ~0.1% of max value
 	}
@@ -233,31 +236,47 @@ func (e *Engine) processBuffer(buffer []int32) {
 	// Hot path. The hottest path in the entire application,
 	// literally the next candidate for Americas Top Model.
 
-	// Apply noise gate if enabled
+	// Determine if FFT processing should occur based on gate
+	shouldProcessFFT := false
 	if e.gateEnabled {
-		// Find maximum amplitude in buffer using bit manipulation
-		// to avoid branching in the hot path
 		var maxAmplitude int32
 		for i := 0; i < len(buffer); i++ {
-			// Get absolute value without branching
-			// (x ^ (x >> 31)) - (x >> 31) is a branchless abs()
 			sample := buffer[i]
-			mask := sample >> 31 // all 1s if negative, all 0s if positive
+			mask := sample >> 31
 			amplitude := (sample ^ mask) - mask
-
-			// Update max using math instead of branching
-			// This avoids potential branch misprediction penalties
 			diff := amplitude - maxAmplitude
 			maxAmplitude += (diff & (diff >> 31)) ^ diff
 		}
-
-		// Only process if above threshold - use a single branch point
-		if maxAmplitude > e.gateThreshold && e.fftProcessor != nil {
-			e.fftProcessor.Process(buffer)
+		if maxAmplitude > e.gateThreshold {
+			shouldProcessFFT = true
 		}
-	} else if e.fftProcessor != nil {
-		// No gate, always process - direct call with no extra branches
-		e.fftProcessor.Process(buffer)
+	} else {
+		// Gate disabled, always process if processor exists
+		shouldProcessFFT = (e.fftProcessor != nil)
+	}
+
+	// Process FFT if needed
+	if shouldProcessFFT && e.fftProcessor != nil {
+		// Prepare the correct buffer for the FFT processor (length = FramesPerBuffer)
+		var fftInputBuffer []int32
+		if e.config.Channels == 1 {
+			// If mono, pass the buffer directly (it's already the correct size)
+			fftInputBuffer = buffer
+		} else {
+			// If stereo (or more channels), extract the first channel into the pre-allocated mono buffer
+			for i := 0; i < e.config.FramesPerBuffer; i++ {
+				// Check bounds just in case buffer length is unexpected
+				if i*e.config.Channels < len(buffer) {
+					e.fftMonoInput[i] = buffer[i*e.config.Channels] // Copy sample from the first channel
+				} else {
+					e.fftMonoInput[i] = 0 // Safety fallback
+				}
+			}
+			fftInputBuffer = e.fftMonoInput // Use the prepared mono buffer
+		}
+
+		// Call FFT processor with the correctly sized buffer
+		e.fftProcessor.Process(fftInputBuffer)
 	}
 }
 

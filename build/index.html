@@ -1,201 +1,174 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
-    <title>Spectrum Analyzer</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spectrum Analyzer (Canvas)</title>
     <style>
         body {
             margin: 0;
-            overflow: hidden;
-            background: #111;
+            background-color: #111;
+            color: #eee;
             font-family: system-ui, -apple-system, sans-serif;
-        }
-
-        .container {
+            overflow: hidden;
             display: flex;
             flex-direction: column;
+            /* Stack canvas and info */
             height: 100vh;
+            align-items: center;
+            /* Center horizontally */
+            justify-content: center;
+            /* Center vertically */
         }
 
-        .visualization {
-            display: flex;
-            flex: 1;
-            align-items: flex-end;
-            padding: 20px 40px;
-            box-sizing: border-box;
-            position: relative;
-            gap: 4px;
-            /* Add explicit gap between items */
-            flex-wrap: nowrap;
-            /* Prevent wrapping */
+        canvas {
+            display: block;
+            background-color: #1a1a1a;
+            /* Slightly lighter background for canvas */
+            /* Let JS control width/height */
         }
 
-        .info {
-            position: absolute;
-            top: 20px;
-            left: 0;
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            padding: 0 40px;
+        .info-bar {
+            padding: 10px;
+            text-align: center;
             color: #0ff;
             font-size: 14px;
-            opacity: 0.6;
-            pointer-events: none;
-        }
-
-        .bar-container {
-            position: relative;
-            flex: 1;
-            min-width: 10px;
-            /* Ensure minimum width */
-            max-width: 60px;
-            /* Limit maximum width */
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .bar {
-            width: 80%;
-            /* Slightly narrower than container */
-            background: cyan;
-            transition: height 0.05s ease-out;
-            border-radius: 2px 2px 0 0;
-            box-shadow: 0 0 8px rgba(0, 255, 255, 0.6);
-        }
-
-        .frequency {
-            font-size: 10px;
-            color: #0ff;
-            text-align: center;
-            opacity: 0.6;
-            margin-top: 5px;
+            width: 90%;
+            /* Match canvas width */
+            max-width: 1200px;
+            /* Optional max width */
+            box-sizing: border-box;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <div class="visualization" id="visualization">
-            <!-- Bars will be added here -->
-        </div>
-        <div style="padding: 10px; text-align: center; color: #0ff;">
-            Spectrum Analyzer | FFT Bands: <span id="band-count">0</span>
-        </div>
+    <!-- Canvas for visualization -->
+    <canvas id="visualizerCanvas"></canvas>
+    <!-- Info bar below canvas -->
+    <div class="info-bar">
+        Spectrum Analyzer | FFT Bands: <span id="band-count">0</span> | Status: <span
+            id="ws-status">Connecting...</span>
     </div>
 
     <script>
-        // Define the frequencies for different band counts
-        const frequencyLabels = {
-            6: ['40Hz', '120Hz', '400Hz', '1.2kHz', '4kHz', '15kHz'],
-            12: ['20Hz', '60Hz', '120Hz', '250Hz', '500Hz', '1kHz',
-                '2kHz', '4kHz', '6kHz', '10kHz', '16kHz', '20kHz'],
-            24: [
-                '20Hz', '30Hz', '40Hz', '60Hz', '90Hz',
-                '120Hz', '180Hz', '250Hz', '350Hz', '500Hz',
-                '700Hz', '1kHz', '1.4kHz', '1.8kHz', '2.5kHz',
-                '3.5kHz', '5kHz', '7kHz', '10kHz', '14kHz',
-                '16kHz', '18kHz', '20kHz', '22kHz'
-            ]
-        };
-
-        // Create elements
-        const container = document.getElementById('visualization');
+        const canvas = document.getElementById('visualizerCanvas');
+        const ctx = canvas.getContext('2d');
         const bandCountElement = document.getElementById('band-count');
-        const bars = [];
-        const peaks = [];
-        const decayRate = 0.98;
+        const wsStatusElement = document.getElementById('ws-status');
 
-        // Connect to WebSocket
-        const socket = new WebSocket('ws://localhost:8080/fft');
+        // --- Configuration ---
+        const decayRate = 0.98; // How fast peaks fall
+        const barSpacingRatio = 0.1; // e.g., 10% spacing between bars
+        const minBarHeight = 1; // Minimum pixel height for a bar
+        const peakLineColor = 'rgba(255, 255, 255, 0.7)';
+        const peakLineWidth = 2; // Height of the peak line
+        const smoothingFactor = 0.2; // Adjust 0.0 (slow) to 1.0 (instant) for smoothness
 
-        function createBars(numBands) {
-            console.log(`Creating ${numBands} bands`);
+        // --- State ---
+        let latestBandData = null;
+        let peaks = [];
+        let currentBarHeights = []; // Store the current animated height of each bar
+        let numBands = 0;
+        let animationFrameId = null; // To potentially cancel the loop
 
-            // Clear existing visualization
-            container.innerHTML = '';
+        // --- WebSocket Connection ---
+        // Use the correct endpoint from your working version
+        const socketUrl = 'ws://localhost:8080/fft';
+        let socket;
 
-            // Add info header
-            const infoDiv = document.createElement('div');
-            infoDiv.className = 'info';
-            infoDiv.innerHTML = '<div>LOW</div><div>MID</div><div>HIGH</div>';
-            container.appendChild(infoDiv);
+        function connectWebSocket() {
+            console.log(`Attempting to connect to ${socketUrl}...`);
+            wsStatusElement.textContent = 'Connecting...';
+            socket = new WebSocket(socketUrl);
 
-            // Clear arrays
-            bars.length = 0;
-            peaks.length = 0;
+            socket.onopen = function (event) {
+                console.log('WebSocket connection opened');
+                wsStatusElement.textContent = 'Connected';
+                resizeCanvas(); // Set initial canvas size
+                // Start the drawing loop if it's not already running
+                if (!animationFrameId) {
+                    drawVisualization();
+                }
+            };
 
-            // Update band count display
-            bandCountElement.textContent = numBands;
+            socket.onclose = function (event) {
+                console.log(`WebSocket connection closed (Code: ${event.code}, Reason: ${event.reason})`);
+                wsStatusElement.textContent = `Disconnected. Retrying...`;
+                latestBandData = null; // Clear data
+                numBands = 0; // Reset band count
+                bandCountElement.textContent = numBands;
+                // Optionally clear canvas or show disconnected state
+                // ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                // ctx.fillRect(0, 0, canvas.width, canvas.height);
+                // ctx.fillStyle = 'white';
+                // ctx.textAlign = 'center';
+                // ctx.fillText('Disconnected', canvas.width / 2, canvas.height / 2);
 
-            // Select frequency labels based on band count
-            const frequencies = frequencyLabels[numBands] ||
-                Array(numBands).fill('').map((_, i) =>
-                    `${Math.round(20 * Math.pow(1000, i / numBands))}Hz`
-                );
+                // Attempt to reconnect after a delay
+                setTimeout(connectWebSocket, 2000); // Retry after 2 seconds
+            };
 
-            // Create all bars at once
-            const fragment = document.createDocumentFragment();
+            socket.onerror = function (error) {
+                console.error('WebSocket error:', error);
+                wsStatusElement.textContent = 'Error';
+                // Error handling might overlap with onclose, which usually follows errors
+            };
 
-            for (let i = 0; i < numBands; i++) {
-                // Create bar container
-                const barContainer = document.createElement('div');
-                barContainer.className = 'bar-container';
-                barContainer.style.backgroundColor = `rgba(0, 10, 20, 0.2)`; // Subtle background
+            socket.onmessage = function (event) {
+                try {
+                    // Store the latest data. The drawing loop will pick it up.
+                    latestBandData = JSON.parse(event.data);
 
-                // Create bar
-                const bar = document.createElement('div');
-                bar.className = 'bar';
-                bar.style.height = '0%';
+                    // Update band count display if it changed
+                    if (latestBandData && latestBandData.length !== numBands) {
+                        numBands = latestBandData.length;
+                        bandCountElement.textContent = numBands;
+                        // Ensure peaks and currentBarHeights arrays match new band count
+                        if (peaks.length !== numBands) {
+                            peaks = new Array(numBands).fill(0);
+                        }
+                        // Initialize or resize currentBarHeights as well
+                        if (currentBarHeights.length !== numBands) {
+                            // If resizing, preserve existing heights or reset
+                            const oldHeights = currentBarHeights;
+                            currentBarHeights = new Array(numBands).fill(0);
+                            // Optional: copy old heights if needed, though resetting might be fine
+                            // for (let i = 0; i < Math.min(oldHeights.length, numBands); i++) {
+                            //    currentBarHeights[i] = oldHeights[i];
+                            // }
+                        }
+                    }
 
-                // Create frequency label
-                const freqLabel = document.createElement('div');
-                freqLabel.className = 'frequency';
-                freqLabel.textContent = frequencies[i] || '';
-
-                // Add to container
-                barContainer.appendChild(bar);
-                barContainer.appendChild(freqLabel);
-                fragment.appendChild(barContainer);
-                bars.push(bar);
-                peaks.push(0);
-            }
-
-            container.appendChild(fragment);
+                } catch (e) {
+                    console.error('Error processing FFT data:', e);
+                    latestBandData = null; // Clear data on error
+                }
+            };
         }
 
-        // Calculate frequency-dependent color
-        function getBarColor(index, value, numBands) {
-            // Blue to Cyan to Green to Yellow to Red
-            const normalizedIndex = index / (numBands - 1);
+
+        // --- Color Function (Same as your original) ---
+        function getBarColor(index, value, totalBars) {
+            // Ensure totalBars is at least 1 to avoid division by zero
+            const numBands = Math.max(1, totalBars);
+            // Avoid division by zero if numBands is 1
+            const normalizedIndex = (numBands === 1) ? 0 : index / (numBands - 1);
             let r, g, b;
 
-            if (normalizedIndex < 0.25) {
-                // Blue to Cyan
-                r = 0;
-                g = Math.floor(255 * normalizedIndex * 4);
-                b = 255;
-            } else if (normalizedIndex < 0.5) {
-                // Cyan to Green
-                r = 0;
-                g = 255;
-                b = Math.floor(255 * (1 - (normalizedIndex - 0.25) * 4));
-            } else if (normalizedIndex < 0.75) {
-                // Green to Yellow
-                r = Math.floor(255 * (normalizedIndex - 0.5) * 4);
-                g = 255;
-                b = 0;
-            } else {
-                // Yellow to Red
-                r = 255;
-                g = Math.floor(255 * (1 - (normalizedIndex - 0.75) * 4));
-                b = 0;
+            if (normalizedIndex < 0.25) { // Blue to Cyan
+                r = 0; g = Math.floor(255 * normalizedIndex * 4); b = 255;
+            } else if (normalizedIndex < 0.5) { // Cyan to Green
+                r = 0; g = 255; b = Math.floor(255 * (1 - (normalizedIndex - 0.25) * 4));
+            } else if (normalizedIndex < 0.75) { // Green to Yellow
+                r = Math.floor(255 * (normalizedIndex - 0.5) * 4); g = 255; b = 0;
+            } else { // Yellow to Red
+                r = 255; g = Math.floor(255 * (1 - (normalizedIndex - 0.75) * 4)); b = 0;
             }
 
             // Apply value intensity
-            const intensity = Math.max(0.3, value);
+            const intensity = Math.max(0.3, value); // Ensure minimum brightness
             r = Math.floor(r * intensity);
             g = Math.floor(g * intensity);
             b = Math.floor(b * intensity);
@@ -203,61 +176,97 @@
             return `rgb(${r}, ${g}, ${b})`;
         }
 
-        socket.onmessage = function (event) {
-            try {
-                // Data is already normalized and grouped into bands
-                const bandData = JSON.parse(event.data);
+        // --- Drawing Function (Canvas Implementation) ---
+        function drawVisualization() {
+            // Request the next frame *before* drawing for a continuous loop
+            animationFrameId = requestAnimationFrame(drawVisualization);
 
-                // If first message or bands changed, recreate visualization
-                if (bars.length !== bandData.length) {
-                    createBars(bandData.length);
-                }
+            // Ensure we have data and the canvas context is valid
+            if (!latestBandData || !ctx) return;
 
-                // Debug log periodically
-                if (Math.random() < 0.01) {
-                    console.log(`Updating ${bandData.length} bands with values:`,
-                        bandData.map(v => Math.round(v * 100) / 100));
-                }
+            const bandData = latestBandData;
+            const currentNumBands = bandData.length; // Use actual length from data
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
 
-                // Update all bars
-                for (let i = 0; i < bars.length && i < bandData.length; i++) {
-                    const value = bandData[i];
-
-                    // Update peak with decay
-                    peaks[i] = Math.max(value, peaks[i] * decayRate);
-
-                    // Set height as percentage
-                    const height = `${Math.max(1, Math.min(100, value * 100))}%`;
-                    bars[i].style.height = height;
-
-                    // Set color based on frequency and value
-                    bars[i].style.backgroundColor = getBarColor(i, value, bandData.length);
-
-                    // Add glow effect based on value
-                    const glowIntensity = Math.min(15, Math.floor(value * 15));
-                    bars[i].style.boxShadow = `0 0 ${glowIntensity}px rgba(0, 255, 255, ${value * 0.8})`;
-                }
-            } catch (e) {
-                console.error('Error processing FFT data:', e);
-                console.error(e.stack);
+            // Ensure peaks array is initialized correctly
+            if (peaks.length !== currentNumBands) {
+                peaks = new Array(currentNumBands).fill(0);
             }
-        };
 
-        socket.onopen = function () {
-            console.log("WebSocket connected");
-        };
+            // --- Drawing ---
 
-        socket.onerror = function (error) {
-            console.error("WebSocket error:", error);
-        };
+            // 1. Clear the canvas
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            // Optional: Fill background if canvas style doesn't cover it
+            // ctx.fillStyle = '#1a1a1a';
+            // ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-        socket.onclose = function () {
-            console.log("WebSocket disconnected, attempting to reconnect...");
-            setTimeout(function () {
-                socket = new WebSocket('ws://localhost:8080/fft');
-                // Reattach event handlers
-            }, 1000);
-        };
+            // 2. Calculate bar dimensions
+            if (currentNumBands === 0) return; // Avoid division by zero if no bands
+
+            const barWidth = canvasWidth / currentNumBands;
+            const barSpacing = barWidth * barSpacingRatio;
+            const effectiveBarWidth = Math.max(1, barWidth - barSpacing); // Ensure at least 1px width
+
+            // 3. Draw each bar
+            for (let i = 0; i < currentNumBands; i++) {
+                const value = bandData[i] || 0; // Default to 0 if undefined
+
+                // Clamp value for safety (0 to 1)
+                const clampedValue = Math.max(0, Math.min(1, value));
+
+                // Update peak with decay
+                peaks[i] = Math.max(clampedValue, peaks[i] * decayRate);
+
+                // Calculate bar height (scaled to canvas height)
+                const barHeight = Math.max(minBarHeight, clampedValue * canvasHeight);
+                const barX = i * barWidth + barSpacing / 2; // Center bar
+                const barY = canvasHeight - barHeight; // Y position starts from bottom
+
+                // Draw the main bar
+                ctx.fillStyle = getBarColor(i, clampedValue, currentNumBands);
+                ctx.fillRect(barX, barY, effectiveBarWidth, barHeight);
+
+                // Draw the peak indicator
+                if (peaks[i] > 0) {
+                    const peakHeight = Math.max(minBarHeight, peaks[i] * canvasHeight);
+                    const peakY = canvasHeight - peakHeight;
+                    // Ensure peak line doesn't draw above the canvas top
+                    const effectivePeakY = Math.max(0, peakY - peakLineWidth / 2);
+
+                    ctx.fillStyle = peakLineColor;
+                    ctx.fillRect(barX, effectivePeakY, effectiveBarWidth, peakLineWidth);
+                }
+            }
+        }
+
+        // --- Canvas Resizing ---
+        function resizeCanvas() {
+            // Make canvas fill a large portion, e.g., 90% width, 60% height
+            const desiredWidth = window.innerWidth * 0.9;
+            const desiredHeight = window.innerHeight * 0.6;
+
+            // Optional: Set a max width for very large screens
+            canvas.width = Math.min(desiredWidth, 1200);
+            canvas.height = desiredHeight;
+
+            // Adjust info bar width to match canvas
+            const infoBar = document.querySelector('.info-bar');
+            if (infoBar) {
+                infoBar.style.width = `${canvas.width}px`;
+            }
+
+
+            console.log(`Canvas resized to ${canvas.width}x${canvas.height}`);
+
+            // Redrawing will happen automatically in the next animation frame
+        }
+
+        // --- Initialization ---
+        window.addEventListener('resize', resizeCanvas); // Adjust canvas on window resize
+        connectWebSocket(); // Initial connection attempt
+
     </script>
 </body>
 
