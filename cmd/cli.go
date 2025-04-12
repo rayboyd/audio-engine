@@ -13,7 +13,7 @@ import (
 // returning the parsed configuration or an error.
 //
 // The CLI supports the following modes:
-// - Interactive TUI mode (default when no command is specified)
+// - Interactive TUI mode (default when no command is specified) (not implemented yet)
 // - One-off commands (e.g., 'list' for device listing)
 // - Help and version information
 func ParseArgs() (*config.Config, error) {

@@ -191,7 +191,7 @@ func (e *Engine) processInputStream(in []int32) {
 	// Using copy() here to avoid any allocations
 	copy(e.inputBuffer, in)
 
-	// Process buffer in-place (no-op for now, but provides hook for future DSP)
+	// Process buffer in-place
 	e.processBuffer(e.inputBuffer)
 
 	// --- process audio buffer
@@ -298,12 +298,12 @@ func (e *Engine) SetGateThreshold(threshold float64) {
 
 	// Convert from percentage to absolute value
 	// int32 max value is 2147483647
-	e.gateThreshold = int32(threshold * 2147483647)
+	e.gateThreshold = int32(threshold * 2147483647) // what is the hit with main.MaxInt32?
 }
 
 // GetGateThreshold returns the current threshold as a percentage (0.0-1.0)
 func (e *Engine) GetGateThreshold() float64 {
-	return float64(e.gateThreshold) / 2147483647
+	return float64(e.gateThreshold) / 2147483647 // what is the hit with main.MaxInt32?
 }
 
 // Recording Operations

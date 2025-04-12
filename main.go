@@ -12,21 +12,21 @@ import (
 	"syscall"
 )
 
-// main is the entry point for the audio processing application.
+// Note: TUI is not implemented yet, ignore placeholders
+//
 // The program flow is divided into three distinct phases:
 //
 // 1. Startup Phase (Cold Path):
-//   - Initialize build information
-//   - Configure runtime settings
+//   - Build info
+//   - Runtime settings
 //   - Initialize PortAudio
-//   - Parse command line arguments
-//   - Execute one-off commands if requested
+//   - Command line arguments
+//   - Execute one-off commands that exit (e.g., device listing)
 //
 // 2. Concurrent Phase (Hot Path):
 //   - Start audio processing engine
 //   - Begin input stream processing
 //   - Start recording if enabled
-//   - Initialize UI components
 //
 // 3. Shutdown Phase (Cold Path):
 //   - Handle termination signals
