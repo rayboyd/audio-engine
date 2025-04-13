@@ -2,5 +2,5 @@
 *.test
 *.wav
 *.prof
-/build/grec
+/build
 /logs

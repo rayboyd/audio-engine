@@ -4,6 +4,8 @@ import (
 	"audio/cmd"
 	"audio/internal/audio"
 	"audio/internal/build"
+	"audio/internal/config"
+	"audio/internal/tui"
 	"fmt"
 	"log"
 	"os"
@@ -60,7 +62,7 @@ func main() {
 	// Handle one-off commands (e.g., device listing) that don't require
 	// the audio engine to be running
 	if config.Command != "" {
-		if err := executeCommand(config.Command); err != nil {
+		if err := executeCommand(config); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -122,7 +124,28 @@ func main() {
 
 // executeCommand handles one-off commands that don't require the audio engine
 // to be running, such as listing available audio devices.
-func executeCommand(command string) error {
-	// Command implementation
+func executeCommand(cfg *config.Config) error {
+	switch cfg.Command {
+	case "list":
+		if cfg.TUIMode {
+			// Use Bubble Tea UI for device listing
+			return tui.StartDeviceListUI()
+		} else {
+			// Use the original implementation
+			devices, err := audio.GetDevices()
+			if err != nil {
+				return err
+			}
+
+			for _, device := range devices {
+				fmt.Printf("[%d] %s\n", device.ID, device.Name)
+				fmt.Printf("    Input Channels: %d, Output Channels: %d\n",
+					device.MaxInputChannels, device.MaxOutputChannels)
+				fmt.Printf("    Sample Rate: %.0f Hz\n\n", device.DefaultSampleRate)
+			}
+		}
+		// ... other commands ...
+	}
+
 	return nil
 }

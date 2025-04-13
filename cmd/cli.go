@@ -44,9 +44,10 @@ func ParseArgs() (*config.Config, error) {
 	// List command
 	listCmd := &cobra.Command{
 		Use:   "list",
-		Short: "List available audio devices and exit",
+		Short: "List available audio devices",
 		Run: func(cmd *cobra.Command, args []string) {
 			options.Command = "list"
+			options.TUIMode = true
 		},
 	}
 	rootCmd.AddCommand(listCmd)
