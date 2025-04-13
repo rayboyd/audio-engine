@@ -1,7 +1,7 @@
 # Audio Engine
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Go Version](https://img.shields.io/badge/Go-1.24.1+-00ADD8?logo=go)
+![Version](https://img.shields.io/badge/version-0.1.0-red)
+![Go Version](https://img.shields.io/badge/Go-1.24.0+-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 A high-performance, real-time audio analysis engine written in Go that captures audio input, performs Fast Fourier Transform (FFT) analysis, and streams frequency spectrum data over WebSocket. The engine is designed for low-latency audio processing with zero-allocation hot paths and thread-safe concurrent operations.

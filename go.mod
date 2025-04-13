@@ -1,6 +1,6 @@
 module audio
 
-go 1.24.1
+go 1.24.0
 
 require (
 	github.com/go-audio/audio v1.0.0
