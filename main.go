@@ -3,8 +3,8 @@ package main
 import (
 	"audio/cmd"
 	"audio/internal/audio"
-	"audio/internal/build"
 	"audio/internal/config"
+	"audio/pkg/build"
 	"fmt"
 	"log"
 	"os"

@@ -1,28 +1,21 @@
 package cmd
 
 import (
-	"audio/internal/build"
 	"audio/internal/config"
+	"audio/pkg/build"
 	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 )
 
-// ParseArgs initializes and executes the command line interface,
-// returning the parsed configuration or an error.
-//
-// The CLI supports the following modes:
-// - Interactive TUI mode (default when no command is specified) (not implemented yet)
-// - One-off commands (e.g., 'list' for device listing)
-// - Help and version information
 func ParseArgs() (*config.Config, error) {
 	buildInfo := build.GetBuildFlags()
 	options := config.NewConfig()
 
 	rootCmd := &cobra.Command{
 		Use:           buildInfo.Name,
-		Short:         "A simple CLI audio processing engine",
+		Short:         buildInfo.Description,
 		Version:       buildInfo.Version,
 		SilenceErrors: true,
 		SilenceUsage:  true,

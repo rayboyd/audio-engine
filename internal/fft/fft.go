@@ -76,8 +76,12 @@ func (p *Processor) Process(inputBuffer []int32) {
 		}
 	}
 
-	// Perform FFT on the input buffer, and calculate the magnitude
-	_ = p.fftObj.Coefficients(p.workspace.fftOutput, p.workspace.input)
+	// Perform FFT on the input buffer
+	p.fftObj.Coefficients(p.workspace.fftOutput, p.workspace.input)
+
+	// Calculate the "raw" magnitude of the FFT output, we're doing nothing
+	// fancy here, just taking the absolute value of the complex number
+	// and storing it in the magnitude buffer for transport to the next stage.
 	for i := range p.workspace.fftOutput {
 		p.workspace.magnitude[i] = cmplx.Abs(p.workspace.fftOutput[i])
 	}

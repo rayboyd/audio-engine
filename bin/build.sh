@@ -88,12 +88,14 @@ setup_environment() {
   fi
 
   # Set environment variables with fallbacks to defaults
-  export ENV_NAME="${ENV_NAME:-AUDIO ENGINE}"
+  export ENV_NAME="${ENV_NAME:-__NAME_NOT_SET__}"
+  export ENV_DESCRIPTION="${ENV_DESCRIPTION:-__DESCRIPTION_NOT_SET__}"
   export ENV_SHORT_NAME="${ENV_SHORT_NAME:-app}"
   export ENV_BUILD_DIR="${ENV_BUILD_DIR:-${PROJECT_ROOT}/build}"
 
   # Set the build metadata
   BUILD_NAME="${ENV_SHORT_NAME}"
+  BUILD_DESCRIPTION="${ENV_DESCRIPTION}"
   BUILD_VERSION="${BUILD_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo 'v0.0.0')}"
   BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   BUILD_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
@@ -156,6 +158,7 @@ build_app() {
   go build -o "${ENV_BUILD_DIR}/${ENV_SHORT_NAME}" \
     -ldflags "\
       -X audio/internal/build.buildName=${BUILD_NAME} \
+      -X audio/internal/build.buildDescription=${BUILD_DESCRIPTION} \
       -X audio/internal/build.buildTime=${BUILD_TIME} \
       -X audio/internal/build.buildCommit=${BUILD_COMMIT} \
       -X audio/internal/build.buildVersion=${BUILD_VERSION}" \

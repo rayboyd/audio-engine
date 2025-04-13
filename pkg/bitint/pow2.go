@@ -43,12 +43,10 @@ func NextPowerOfTwo(size int) int {
 	if size <= 0 {
 		return 1
 	}
-
 	// 64-bit platforms (where int is 64-bit).
 	if ^uint(0)>>63 == 0 {
 		return int(1 << (bits.Len64(uint64(size - 1))))
 	}
-
 	// 32-bit platforms.
 	return int(1 << (bits.Len32(uint32(size - 1))))
 }

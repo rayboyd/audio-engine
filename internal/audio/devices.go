@@ -130,8 +130,10 @@ func paDevices() ([]*portaudio.DeviceInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if devices == nil {
 		return []*portaudio.DeviceInfo{}, nil
 	}
+
 	return devices, nil
 }

@@ -58,36 +58,34 @@ type Engine struct {
 }
 
 func NewEngine(config *config.Config) (engine *Engine, err error) {
-	// Sets the input device to the default input device if the device ID is
-	// set to the minimum device ID. Otherwise, it sets the input device to
-	// the device ID specified in the configuration.
 	inputDevice, err := InputDevice(config.DeviceID)
 	if err != nil {
 		return nil, err
 	}
+
+	wsTransport := fft.NewWebSocketTransport("8080")
+
+	fftProcessor := fft.NewProcessor(
+		config.FramesPerBuffer,
+		float64(config.SampleRate),
+		wsTransport,
+	)
+
+	// Pre-allocate mono input buffer for FFT processing, we don't need a stereo
+	// buffer for FFT processing, just the first channel. This is a performance
+	// optimization to avoid unnecessary allocations in the hot path.
+	fftMonoInput := make([]int32, config.FramesPerBuffer)
 
 	// Pre-allocate I/O buffers which are the size of the frames per buffer
 	// multiplied by the number of channels. A frame is a set of samples that
 	// occur simultaneously. For a stereo stream, a frame is two samples. The
 	// buffer size must be a power of 2 and greater than 0 (this was verified
 	// defaulted in the ValidateAndDefault function).
-	buffer := config.FramesPerBuffer * config.Channels
-
-	// Create WebSocket transport for FFT data
-	wsTransport := fft.NewWebSocketTransport("8080")
-
-	// Create FFT processor
-	fftProcessor := fft.NewProcessor(
-		config.FramesPerBuffer,
-		float64(config.SampleRate),
-		wsTransport,
-	)
-	// Allocate mono buffer for FFT input (size = FramesPerBuffer)
-	fftMonoInput := make([]int32, config.FramesPerBuffer) // New allocation
+	inputSize := config.FramesPerBuffer * config.Channels
 
 	engine = &Engine{
 		config:        config,
-		inputBuffer:   make([]int32, buffer),
+		inputBuffer:   make([]int32, inputSize),
 		inputDevice:   inputDevice,
 		fftProcessor:  fftProcessor,
 		fftMonoInput:  fftMonoInput,
@@ -108,14 +106,7 @@ func NewEngine(config *config.Config) (engine *Engine, err error) {
 	return engine, nil
 }
 
-// StartInputStream configures and starts the real-time audio capture stream.
-// It sets up a PortAudio stream with the configured parameters and begins
-// the processing chain. The stream runs until explicitly stopped.
-//
-// Thread Safety:
-// - Safe to call from any goroutine
-// - Creates a dedicated OS thread for audio processing
-// - Uses atomic operations for state management
+// StartInputStream initializes and starts the PortAudio input stream.
 func (e *Engine) StartInputStream() error {
 	params := portaudio.StreamParameters{
 		Input: portaudio.StreamDeviceParameters{
@@ -131,14 +122,12 @@ func (e *Engine) StartInputStream() error {
 		SampleRate:      e.config.SampleRate,
 	}
 
-	// Open the input stream
 	stream, err := portaudio.OpenStream(params, e.processInputStream)
 	if err != nil {
 		return err
 	}
 	e.inputStream = stream
 
-	// Start the input stream
 	if err := e.inputStream.Start(); err != nil {
 		e.inputStream.Close()
 		return err
@@ -147,14 +136,9 @@ func (e *Engine) StartInputStream() error {
 	return nil
 }
 
-// StopInputStream stops and closes the PortAudio input stream.
-// This is called internally by Close() but can also be used to temporarily
-// stop audio processing without destroying the Engine.
-//
-// Thread Safety:
-// - Safe to call from any goroutine
-// - Idempotent - safe to call multiple times
-// - Nullifies stream reference after cleanup
+// StopInputStream stops and closes the PortAudio input stream, releasing
+// any resources associated with it. This is a blocking call and should
+// be used to clean up the input stream when it is no longer needed.
 func (e *Engine) StopInputStream() error {
 	if e.inputStream != nil {
 		if err := e.inputStream.Stop(); err != nil {
