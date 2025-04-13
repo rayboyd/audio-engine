@@ -2,6 +2,7 @@
 package fft
 
 import (
+	"audio/pkg/utils"
 	"math"
 	"os"
 	"testing"
@@ -14,14 +15,14 @@ const (
 
 var (
 	testProcessor   *Processor
-	mockTransport   *MockTransport
+	mockTransport   *utils.MockTransport
 	testInputBuffer []int32
 	sineWave440Hz   []int32
 	complexWave     []int32
 )
 
 func TestMain(m *testing.M) {
-	mockTransport = &MockTransport{}
+	mockTransport = &utils.MockTransport{}
 	testProcessor = NewProcessor(testFFTSize, testSampleRate, nil)
 
 	testInputBuffer = make([]int32, testFFTSize)
@@ -29,13 +30,13 @@ func TestMain(m *testing.M) {
 		testInputBuffer[i] = int32((i%256 - 128) * 1000000)
 	}
 
-	sineWave440Hz = generateSineWave(testFFTSize, testSampleRate, 440.0)
-	complexWave = generateComplexWave(testFFTSize, testSampleRate)
+	sineWave440Hz = utils.GenerateSineWave(testFFTSize, testSampleRate, 440.0)
+	complexWave = utils.GenerateComplexWave(testFFTSize, testSampleRate)
 
-	// Run all tests
+	// Run all tests.
 	exitCode := m.Run()
 
-	// Clean up if needed
+	// Clean up if needed.
 	// (No specific cleanup needed in this case)
 
 	os.Exit(exitCode)
@@ -86,18 +87,6 @@ func TestGetFrequencyBin(t *testing.T) {
 	}
 }
 
-// MockTransport implements the Transport interface for testing.
-type MockTransport struct {
-	lastData []float64
-}
-
-// Send stores the data for later inspection instead of transmitting.
-func (m *MockTransport) Send(data []float64) error {
-	m.lastData = make([]float64, len(data))
-	copy(m.lastData, data)
-	return nil
-}
-
 func TestProcessWithMockTransport(t *testing.T) {
 	tests := []struct {
 		desc      string
@@ -105,23 +94,23 @@ func TestProcessWithMockTransport(t *testing.T) {
 		signal    []int32
 	}{
 		{"440 Hz (A4 note)", 440.0, sineWave440Hz},
-		{"1 kHz tone", 1000.0, generateSineWave(testFFTSize, testSampleRate, 1000.0)},
+		{"1 kHz tone", 1000.0, utils.GenerateSineWave(testFFTSize, testSampleRate, 1000.0)},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			mt := &MockTransport{}
+			mt := &utils.MockTransport{}
 			p := NewProcessor(testFFTSize, testSampleRate, mt)
 
 			p.Process(tt.signal)
 
 			expectedBin := int(tt.frequency * float64(testFFTSize) / testSampleRate)
 
-			if mt.lastData == nil {
+			if mt.LastData == nil {
 				t.Fatal("No data sent to transport")
 			}
 
-			peakBin := findPeakBin(mt.lastData, 0, len(mt.lastData)-1)
+			peakBin := utils.FindPeakBin(mt.LastData, 0, len(mt.LastData)-1)
 
 			maxAllowedBinDiff := 2 // Allow for some error due to FFT windowing
 			if abs(peakBin-expectedBin) > maxAllowedBinDiff {
@@ -154,48 +143,6 @@ func BenchmarkProcess(b *testing.B) {
 			}
 		})
 	}
-}
-
-func generateComplexWave(size int, sampleRate float64) []int32 {
-	buffer := make([]int32, size)
-	for i := range buffer {
-		tm := float64(i) / sampleRate
-		signal := math.Sin(2*math.Pi*440*tm)*0.5 +
-			math.Sin(2*math.Pi*880*tm)*0.3 +
-			math.Sin(2*math.Pi*1320*tm)*0.2 // 440Hz fundamental + harmonics
-		buffer[i] = int32(signal * math.MaxInt32 * 0.9)
-	}
-	return buffer
-}
-
-func generateSineWave(size int, sampleRate, frequency float64) []int32 {
-	buffer := make([]int32, size)
-	for i := range buffer {
-		t := float64(i) / sampleRate
-		buffer[i] = int32(math.Sin(2*math.Pi*frequency*t) * math.MaxInt32 * 0.9)
-	}
-	return buffer
-}
-
-func findPeakBin(magnitudes []float64, startBin, endBin int) int {
-	if startBin < 0 {
-		startBin = 0
-	}
-	if endBin >= len(magnitudes) {
-		endBin = len(magnitudes) - 1
-	}
-
-	peakBin := startBin
-	peakValue := magnitudes[startBin]
-
-	for bin := startBin + 1; bin <= endBin; bin++ {
-		if magnitudes[bin] > peakValue {
-			peakValue = magnitudes[bin]
-			peakBin = bin
-		}
-	}
-
-	return peakBin
 }
 
 func abs(x int) int {
