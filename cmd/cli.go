@@ -15,7 +15,6 @@ func ParseArgs() (*config.Config, error) {
 
 	rootCmd := &cobra.Command{
 		Use:           buildInfo.Name,
-		Short:         buildInfo.Description,
 		Version:       buildInfo.Version,
 		SilenceErrors: true,
 		SilenceUsage:  true,

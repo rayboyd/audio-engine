@@ -157,11 +157,10 @@ build_app() {
   # Build command (silent)
   go build -o "${ENV_BUILD_DIR}/${ENV_SHORT_NAME}" \
     -ldflags "\
-      -X audio/internal/build.buildName=${BUILD_NAME} \
-      -X audio/internal/build.buildDescription=${BUILD_DESCRIPTION} \
-      -X audio/internal/build.buildTime=${BUILD_TIME} \
-      -X audio/internal/build.buildCommit=${BUILD_COMMIT} \
-      -X audio/internal/build.buildVersion=${BUILD_VERSION}" \
+      -X audio/pkg/build.buildName=${BUILD_NAME} \
+      -X audio/pkg/build.buildTime=${BUILD_TIME} \
+      -X audio/pkg/build.buildCommit=${BUILD_COMMIT} \
+      -X audio/pkg/build.buildVersion=${BUILD_VERSION}" \
     main.go > /dev/null 2>&1
 
   # Completion and binary size

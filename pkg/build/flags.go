@@ -2,36 +2,33 @@
 /*
 Package build provides functionality to manage and retrieve build information
 for a Go application. It allows embedding metadata such as the application
-name, description, build timestamp, Git commit hash, and semantic version
-into the binary at compile time using linker flags. This information can be
-useful for debugging, logging, and displaying version information to users.
+name, build timestamp, Git commit hash, and semantic version into the binary
+at compile time using linker flags. This information can be useful for debugging,
+logging, and displaying version information to users.
 */
 package build
 
 import "fmt"
 
 type ldFlags struct {
-	Name        string
-	Description string
-	Time        string
-	Commit      string
-	Version     string
+	Name    string
+	Time    string
+	Commit  string
+	Version string
 }
 
 // Package-level variables for build information. These are populated by -ldflags
 // during compilation. Default values of "unknown" are used during development.
 var (
-	buildName        string
-	buildDescription string
-	buildTime        string
-	buildCommit      string
-	buildVersion     string
-	buildFlags       = &ldFlags{
-		Name:        "unknown",
-		Description: "unknown",
-		Time:        "unknown",
-		Commit:      "unknown",
-		Version:     "unknown",
+	buildName    string
+	buildTime    string
+	buildCommit  string
+	buildVersion string
+	buildFlags   = &ldFlags{
+		Name:    "unknown",
+		Time:    "unknown",
+		Commit:  "unknown",
+		Version: "unknown",
 	}
 )
 
@@ -42,9 +39,6 @@ var (
 func Initialize() error {
 	if buildName == "" {
 		return fmt.Errorf("BuildName is required")
-	}
-	if buildDescription == "" {
-		return fmt.Errorf("BuildDescription is required")
 	}
 	if buildTime == "" {
 		return fmt.Errorf("BuildTime is required")
@@ -57,7 +51,6 @@ func Initialize() error {
 	}
 
 	buildFlags.Name = buildName
-	buildFlags.Description = buildDescription
 	buildFlags.Time = buildTime
 	buildFlags.Commit = buildCommit
 	buildFlags.Version = buildVersion
