@@ -47,7 +47,7 @@ func ParseArgs() (*config.Config, error) {
 		Short: "List available audio devices",
 		Run: func(cmd *cobra.Command, args []string) {
 			options.Command = "list"
-			options.TUIMode = true
+			options.TUIMode = false
 		},
 	}
 	rootCmd.AddCommand(listCmd)
@@ -59,6 +59,7 @@ func ParseArgs() (*config.Config, error) {
 		"Number of channels to record (1=mono, 2=stereo)")
 	rootCmd.PersistentFlags().Float64VarP(&options.SampleRate, "sample-rate", "s", config.DefaultSampleRate,
 		"Sample rate, measured in Hertz (Hz)")
+
 	rootCmd.PersistentFlags().IntVarP(&options.FramesPerBuffer, "frames-per-buffer", "b", config.DefaultFramesPerBuffer,
 		"The number of frames per buffer (affects latency)")
 	rootCmd.PersistentFlags().BoolVarP(&options.LowLatency, "low-latency", "l", config.DefaultLowLatency,

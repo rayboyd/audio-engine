@@ -50,7 +50,7 @@ create_footer() {
 show_progress() {
   local COLOR="$1"
   local MSG="$2"
-  local DELAY="${3:-0.01}"
+  local DELAY="${3:-0.00001}"
   local BAR_SIZE=59
 
   # Print message on one line
@@ -237,9 +237,11 @@ main() {
 
   build_app
 
-  run_tests
-  TEST_RESULT=$?
-  show_summary $TEST_RESULT
+  if [[ "$1" == "--test" ]]; then
+    run_tests
+    TEST_RESULT=$?
+    show_summary $TEST_RESULT
+  fi
 
   restore_input
 }

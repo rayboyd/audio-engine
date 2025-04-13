@@ -5,7 +5,6 @@ import (
 	"audio/internal/audio"
 	"audio/internal/build"
 	"audio/internal/config"
-	"audio/internal/tui"
 	"fmt"
 	"log"
 	"os"
@@ -127,25 +126,68 @@ func main() {
 func executeCommand(cfg *config.Config) error {
 	switch cfg.Command {
 	case "list":
-		if cfg.TUIMode {
-			// Use Bubble Tea UI for device listing
-			return tui.StartDeviceListUI()
-		} else {
-			// Use the original implementation
-			devices, err := audio.GetDevices()
-			if err != nil {
-				return err
-			}
-
-			for _, device := range devices {
-				fmt.Printf("[%d] %s\n", device.ID, device.Name)
-				fmt.Printf("    Input Channels: %d, Output Channels: %d\n",
-					device.MaxInputChannels, device.MaxOutputChannels)
-				fmt.Printf("    Sample Rate: %.0f Hz\n\n", device.DefaultSampleRate)
-			}
+		devices, err := audio.HostDevices()
+		if err != nil {
+			return fmt.Errorf("failed to list devices: %w", err)
 		}
-		// ... other commands ...
+
+		if len(devices) == 0 {
+			fmt.Println("No audio devices found.")
+			return nil
+		}
+
+		fmt.Printf("\nAvailable Audio Devices (%d found)\n\n", len(devices))
+
+		// Loop through devices and call the print helper
+		for _, device := range devices {
+			printDeviceDetails(device)
+		}
+
+	// ... (other cases) ...
+	default:
+		return fmt.Errorf("unknown command: %s", cfg.Command)
+	}
+	return nil
+}
+
+// printDeviceDetails formats and prints information about a single audio device.
+func printDeviceDetails(device audio.Device) {
+	// Determine device type
+	deviceType := "Unknown"
+	if device.MaxInputChannels > 0 && device.MaxOutputChannels > 0 {
+		deviceType = "Input/Output"
+	} else if device.MaxInputChannels > 0 {
+		deviceType = "Input"
+	} else if device.MaxOutputChannels > 0 {
+		deviceType = "Output"
 	}
 
-	return nil
+	// Format default marker
+	defaultMarker := ""
+	if device.IsDefaultInput && device.IsDefaultOutput {
+		defaultMarker = " (Default Input & Output)"
+	} else if device.IsDefaultInput {
+		defaultMarker = " (Default Input)"
+	} else if device.IsDefaultOutput {
+		defaultMarker = " (Default Output)"
+	}
+
+	// Print basic info
+	fmt.Printf("[%d] %s%s\n", device.ID, device.Name, defaultMarker)
+	fmt.Printf("    Type: %s, Host API: %s\n", deviceType, device.HostApiName)
+	fmt.Printf("    Channels: Input=%d, Output=%d\n", device.MaxInputChannels, device.MaxOutputChannels)
+	fmt.Printf("    Default Sample Rate: %.0f Hz\n", device.DefaultSampleRate)
+
+	// Print latency info if applicable
+	if device.MaxInputChannels > 0 {
+		fmt.Printf("    Default Input Latency: Low=%.2fms, High=%.2fms\n",
+			device.DefaultLowInputLatency.Seconds()*1000,
+			device.DefaultHighInputLatency.Seconds()*1000)
+	}
+	if device.MaxOutputChannels > 0 {
+		fmt.Printf("    Default Output Latency: Low=%.2fms, High=%.2fms\n",
+			device.DefaultLowOutputLatency.Seconds()*1000,
+			device.DefaultHighOutputLatency.Seconds()*1000)
+	}
+	fmt.Println() // Add a blank line for separation
 }
