@@ -4,35 +4,27 @@ Package bitint provides bit manipulation functions optimized for
 real-time audio processing. The package focuses on power-of-2
 operations commonly needed in FFT and buffer sizing.
 
-Design Principles:
-- Zero Allocations: All operations use stack memory only
-- Predictable Performance: O(1) constant time operations
-- Platform Aware: Optimized for both 32-bit and 64-bit platforms
-- Real-Time Safe: No locks, syscalls, or blocking operations
+NextPowerOfTwo returns the next power of 2 greater than or
+equal to size. For powers of 2, it returns the same value.
+For other values, it returns the next higher power of 2.
 
-What this code does:
+The subtraction (size-1) is critical, without the subtraction,
+powers of 2 would be incorrectly doubled.
 
-	NextPowerOfTwo returns the next power of 2 greater than or
-	equal to size. For powers of 2, it returns the same value.
-	For other values, it returns the next higher power of 2.
+WITH subtraction (correct):
+- For input 8 (already a power of 2):
+	size-1 = 7 (binary 0111)
+	bits.Len32(7) = 3 (highest bit position is 2^2)
+	1 << 3 = 8 (correctly preserves original power of 2)
 
-	The subtraction (size-1) is critical, without the subtraction,
-	powers of 2 would be incorrectly doubled.
+WITHOUT subtraction (incorrect):
+- For input 8 (already a power of 2):
+	bits.Len32(8) = 4 (binary 1000 has its highest bit position at 2^3)
+	1 << 4 = 16 (incorrectly doubles the input)
 
-	WITH subtraction (correct):
-	- For input 8 (already a power of 2):
-	  size-1 = 7 (binary 0111)
-	  bits.Len32(7) = 3 (highest bit position is 2^2)
-	  1 << 3 = 8 (correctly preserves original power of 2)
-
-	WITHOUT subtraction (incorrect):
-	- For input 8 (already a power of 2):
-	  bits.Len32(8) = 4 (binary 1000 has its highest bit position at 2^3)
-	  1 << 4 = 16 (incorrectly doubles the input)
-
-	This ensures we get exactly the right shift amount to return
-	the same value for powers of 2, and the next power of 2 for
-	all other values.
+This ensures we get exactly the right shift amount to return
+the same value for powers of 2, and the next power of 2 for
+all other values.
 */
 package bitint
 

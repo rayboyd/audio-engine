@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
-/*
-Package build provides functionality to manage and retrieve build information
-for a Go application. It allows embedding metadata such as the application
-name, build timestamp, Git commit hash, and semantic version into the binary
-at compile time using linker flags. This information can be useful for debugging,
-logging, and displaying version information to users.
-*/
+//
+// Package build provides functionality to manage and retrieve build information
+// for a Go application. It allows embedding metadata such as the application
+// name, build timestamp, Git commit hash, and semantic version into the binary
+// at compile time using linker flags. This information can be useful for debugging,
+// logging, and displaying version information to users.
 package build
 
 import "fmt"

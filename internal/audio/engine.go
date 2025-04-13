@@ -33,8 +33,7 @@ import (
 // - Locks OS thread during audio processing
 type Engine struct {
 	// Core configuration and state
-	config     *config.Config
-	frameCount int64 // Atomic frame count for tracking processed frames
+	config *config.Config
 
 	// Audio input handling
 	inputBuffer  []int32               // Pre-allocated buffer for incoming audio
@@ -170,7 +169,6 @@ func (e *Engine) StopInputStream() error {
 // 3. Perform FFT analysis if enabled
 // 4. Record to WAV if enabled
 func (e *Engine) processInputStream(in []int32) {
-	// Lock this goroutine to the current OS thread to prevent migration
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
