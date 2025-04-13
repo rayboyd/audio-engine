@@ -17,6 +17,7 @@ func (e *Engine) SetGateThreshold(threshold float64) {
 	if threshold < 0.0 {
 		threshold = 0.0
 	}
+
 	if threshold > 1.0 {
 		threshold = 1.0
 	}

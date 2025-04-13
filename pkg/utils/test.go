@@ -11,7 +11,6 @@ type MockTransport struct {
 func (m *MockTransport) Send(data []float64) error {
 	m.LastData = make([]float64, len(data))
 	copy(m.LastData, data)
-
 	return nil
 }
 
@@ -37,9 +36,14 @@ func GenerateSineWave(size int, sampleRate, frequency float64) []int32 {
 }
 
 func FindPeakBin(magnitudes []float64, startBin, endBin int) int {
+	if len(magnitudes) == 0 {
+		return 0
+	}
+
 	if startBin < 0 {
 		startBin = 0
 	}
+
 	if endBin >= len(magnitudes) {
 		endBin = len(magnitudes) - 1
 	}
