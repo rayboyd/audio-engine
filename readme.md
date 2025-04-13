@@ -1,16 +1,64 @@
 # Audio Engine
 
-A real-time audio processing engine with FFT visualization capabilities, built in Go.
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Go Version](https://img.shields.io/badge/Go-1.24.1+-00ADD8?logo=go)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Features
+A high-performance, real-time audio analysis engine written in Go that captures audio input, performs Fast Fourier Transform (FFT) analysis, and streams frequency spectrum data over WebSocket. The engine is designed for low-latency audio processing with zero-allocation hot paths and thread-safe concurrent operations.
 
-- Real-time audio input processing
-- Fast Fourier Transform (FFT) analysis
-- Web-based spectrum visualization
-- Support for audio device selection
-- Optional input stream recording
-- Terminal UI mode
-- WebSocket-based real-time data streaming
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/rayboyd/audio-engine
+cd grec-v2
+
+# Build the application
+./bin/build.sh
+
+# Run with visualization
+./build/app --tui
+
+# Open html/index.html in your browser to see real-time visualization
+```
+
+## Key Features
+
+- Real-time audio capture with configurable device selection and buffer sizes
+- Zero-allocation FFT processing in the audio hot path
+- Lock-free audio processing with atomic state management
+- Branchless noise gate implementation for efficient signal conditioning
+- Real-time WebSocket streaming of FFT data with rate limiting
+- Optional WAV recording with pre-allocated buffers
+- Web-based spectrum visualization using HTML5 Canvas
+- Terminal UI mode for system monitoring
+
+## Screenshots
+
+<!-- Consider adding screenshots here:
+<p align="center">
+  <img src="docs/assets/spectrum.png" width="600" alt="Spectrum Analyzer">
+  <br>
+  <em>Real-time audio spectrum analyzer</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/terminal.png" width="600" alt="Terminal UI">
+  <br>
+  <em>Terminal UI showing system performance</em>
+</p>
+-->
+
+## Technical Highlights
+
+- **Low Latency Processing**: Direct memory-mapped audio capture using PortAudio
+- **Memory Efficiency**: Pre-allocated buffers and zero-allocation processing chains
+- **Thread Safety**: Atomic operations for state management, mutex-protected WebSocket broadcasts
+- **Performance Optimizations**:
+  - Branchless signal processing implementation
+  - OS thread locking for audio callbacks
+  - Rate-limited WebSocket broadcasts
+  - Power-of-2 optimized FFT sizes
 
 ## Requirements
 
@@ -31,7 +79,7 @@ A real-time audio processing engine with FFT visualization capabilities, built i
 1. Clone the repository:
 
 ```bash
-git clone [repository-url]
+git clone https://github.com/rayboyd/audio-engine
 cd grec-v2
 ```
 
@@ -144,3 +192,45 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Troubleshooting
+
+### Common Issues
+
+#### No Audio Devices Found
+
+- Ensure your audio devices are properly connected
+- Try running with elevated privileges (`sudo ./build/app` on Linux/macOS)
+- Verify PortAudio is properly installed on your system
+
+#### Visualization Not Working
+
+- Check that WebSocket connection is not blocked by firewall
+- Verify you're accessing `html/index.html` while the application is running
+- Check browser console for JavaScript errors
+
+#### High CPU Usage
+
+- Try increasing the buffer size with `--buffer-size=4096`
+- Reduce FFT size with `--fft-size=1024`
+- Limit update rate with `--rate-limit=30`
+
+#### Poor Audio Quality
+
+- Ensure the correct input device is selected
+- Try different sample rates with `--sample-rate=48000`
+- Adjust the noise gate threshold with `--noise-gate=0.02`
+
+### FAQ
+
+**Q: Can I use this for live performances?**  
+A: Yes, the engine is designed for low-latency processing, but test thoroughly with your specific hardware setup first.
+
+**Q: How do I record longer audio sessions?**  
+A: Use the `--record` flag with `--output=filename.wav`. Ensure you have sufficient disk space.
+
+**Q: Is it possible to process multiple audio inputs simultaneously?**  
+A: Currently, the engine supports a single audio input. Multi-channel support is on the roadmap.
+
+**Q: How can I customize the visualization?**  
+A: Edit the HTML/CSS/JavaScript in the `html/index.html` file to match your requirements.
