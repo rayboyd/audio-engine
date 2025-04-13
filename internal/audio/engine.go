@@ -28,24 +28,24 @@ import (
 )
 
 type Engine struct {
-	// Core configuration and state
+	// Core configuration and state.
 	config *config.Config
 
-	// Audio input handling
+	// Audio input handling.
 	inputBuffer  []int32
 	inputDevice  *portaudio.DeviceInfo
 	inputLatency time.Duration
 	inputStream  *portaudio.Stream
 
-	// FFT processing for real-time analysis
+	// FFT processing for real-time analysis.
 	fftProcessor *fft.Processor
 	fftMonoInput []int32 // Mono input buffer for FFT processing
 
-	// Noise gate for signal conditioning
+	// Noise gate for signal conditioning.
 	gateEnabled   bool
 	gateThreshold int32 // Absolute amplitude threshold (0-2147483647)
 
-	// Recording state and buffers
+	// Recording state and buffers.
 	isRecording int32 // Atomic flag for thread-safe state
 	outputFile  *os.File
 	wavEncoder  *wav.Encoder
@@ -65,10 +65,10 @@ func NewEngine(config *config.Config) (engine *Engine, err error) {
 		wsTransport,
 	)
 
-	// Pre-allocate mono input buffer for FFT processing
+	// Pre-allocate mono input buffer for FFT processing.
 	fftMonoInput := make([]int32, config.FramesPerBuffer)
 
-	// Pre-allocate I/O buffers sized for frames × channels
+	// Pre-allocate I/O buffers sized for frames × channels.
 	inputSize := config.FramesPerBuffer * config.Channels
 
 	engine = &Engine{
@@ -167,7 +167,7 @@ func (e *Engine) processInputStream(in []int32) {
 // - Branchless noise gate implementation
 // - Direct FFT processing call
 func (e *Engine) processBuffer(buffer []int32) {
-	// Determine if FFT processing should occur based on gate
+	// Determine if FFT processing should occur based on gate.
 	shouldProcessFFT := false
 	if e.gateEnabled {
 		var maxAmplitude int32
@@ -185,7 +185,7 @@ func (e *Engine) processBuffer(buffer []int32) {
 		shouldProcessFFT = (e.fftProcessor != nil)
 	}
 
-	// Process FFT if needed
+	// Process FFT if needed.
 	if shouldProcessFFT && e.fftProcessor != nil {
 		var fftInputBuffer []int32
 		if e.config.Channels == 1 {

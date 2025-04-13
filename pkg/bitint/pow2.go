@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MIT
 /*
-Package bitint provides bit manipulation functions optimized for
-real-time audio processing. The package focuses on power-of-2
-operations commonly needed in FFT and buffer sizing.
+Package bitint provides bit manipulation functions optimized for real-time audio
+processing. The package focuses on power-of-2 operations commonly needed in FFT
+and buffer sizing. NextPowerOfTwo returns the next power of 2 greater than or
+equal to size. For powers of 2, it returns the same value. For other values, it
+returns the next higher power of 2.
 
-NextPowerOfTwo returns the next power of 2 greater than or
-equal to size. For powers of 2, it returns the same value.
-For other values, it returns the next higher power of 2.
-
-The subtraction (size-1) is critical, without the subtraction,
-powers of 2 would be incorrectly doubled.
+The subtraction (size-1) is critical, without the subtraction, powers of 2 would be
+incorrectly doubled.
 
 WITH subtraction (correct):
 - For input 8 (already a power of 2):
@@ -22,9 +20,8 @@ WITHOUT subtraction (incorrect):
 	bits.Len32(8) = 4 (binary 1000 has its highest bit position at 2^3)
 	1 << 4 = 16 (incorrectly doubles the input)
 
-This ensures we get exactly the right shift amount to return
-the same value for powers of 2, and the next power of 2 for
-all other values.
+This ensures we get exactly the right shift amount to return the same value for
+powers of 2, and the next power of 2 for all other values.
 */
 package bitint
 
