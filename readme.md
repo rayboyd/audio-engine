@@ -1,89 +1,65 @@
 # Audio Engine
 
-![Version](https://img.shields.io/badge/version-0.1.0-red)
-![Go Version](https://img.shields.io/badge/Go-1.24.0+-00ADD8?logo=go)
-![License](https://img.shields.io/badge/license-MIT-green)
+## Overview
 
-A high-performance, real-time audio analysis engine written in Go that captures audio input, performs Fast Fourier Transform (FFT) analysis, and streams frequency spectrum data over WebSocket. The engine is designed for low-latency audio processing with zero-allocation hot paths and thread-safe concurrent operations.
+Audio Engine is a high-performance, real-time audio analysis tool written in Go. It captures audio input, performs Fast Fourier Transform (FFT) analysis, and streams frequency spectrum data over WebSocket. Designed for low-latency audio processing, it features zero-allocation hot paths and thread-safe operations.
 
-## Quick Start
+## Platform/Requirements
 
-```bash
-# Clone the repository
-git clone https://github.com/rayboyd/audio-engine
-cd grec-v2
-
-# Build the application
-./bin/build.sh
-
-# Run the application
-./build/app
-
-# Open html/index.html in your browser to see real-time visualization
-```
-
-## Key Features
-
-**roadmap**
-
-## Screenshots
-
-**roadmap**
-
-## Technical Highlights
-
-**roadmap**
-
-## Requirements
-
-- Go 1.24.0 or later
-- PortAudio
+- **Platform**: Currently tested only on macOS. Not yet built or tested on Windows.
+- **Requirements**:
+  - Go 1.24.0 or later
+  - PortAudio (for audio input/output)
 
 ## Installation
 
+### Prerequisites
+
+1. Install **Homebrew** (if not already installed):
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+2. Install PortAudio and pkg-config via Homebrew:
+
+   ```bash
+   brew install portaudio pkg-config
+   ```
+
+3. Install Go (if not already installed):
+   ```bash
+   brew install go
+   ```
+
+### Build and Run
+
 1. Clone the repository:
 
-```bash
-git clone https://github.com/rayboyd/audio-engine
-cd grec-v2
-```
+   ```bash
+   git clone https://github.com/rayboyd/audio-engine
+   cd grec-v2
+   ```
 
-2. Install dependencies:
+2. Install Go dependencies:
 
-```bash
-go mod download
-```
+   ```bash
+   go mod download
+   ```
 
-3. Build the project:
+3. Build the application:
 
-```bash
-./bin/build.sh
-```
+   ```bash
+   ./bin/build.sh
+   ```
 
-## Usage
+4. Run the application:
 
-Run the application:
+   ```bash
+   ./build/app
+   ```
 
-```bash
-./build/app --help
-```
-
-## Development
-
-### Project Structure
-
-**roadmap**
-
-### Building
-
-The project includes a build script with various options:
-
-```bash
-./bin/build.sh         # Normal build
-./bin/build.sh --test  # Build and run tests
-./bin/build.sh --help  # Show build options
-```
-
-## Contributing
-
-**roadmap**
+5. Open the visualization in your browser:
+   ```
+   Open `html/index.html` in your browser to see the real-time spectrum analyzer.
+   ```
