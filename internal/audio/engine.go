@@ -1,29 +1,12 @@
 // SPDX-License-Identifier: MIT
-/*
-Package audio implements a real-time audio processing engine with:
-- Lock-free audio capture using PortAudio
-- Real-time FFT analysis with configurable bands
-- Noise gate with branchless implementation
-- WAV recording with atomic state management
-
-Thread Safety:
-- Uses atomic operations for state management
-- Pre-allocates buffers to avoid GC in hot path
-- Locks OS thread during audio processing
-*/
 package audio
 
 import (
 	"audio/internal/config"
 	"audio/internal/fft"
-	"log"
-	"os"
 	"runtime"
-	"sync/atomic"
 	"time"
 
-	"github.com/go-audio/audio"
-	"github.com/go-audio/wav"
 	"github.com/gordonklaus/portaudio"
 )
 
@@ -44,12 +27,6 @@ type Engine struct {
 	// Noise gate for signal conditioning.
 	gateEnabled   bool
 	gateThreshold int32 // Absolute amplitude threshold (0-2147483647)
-
-	// Recording state and buffers.
-	isRecording int32 // Atomic flag for thread-safe state
-	outputFile  *os.File
-	wavEncoder  *wav.Encoder
-	sampleBuf   *audio.IntBuffer // Reusable buffer for format conversion
 }
 
 func NewEngine(config *config.Config) (engine *Engine, err error) {
@@ -88,6 +65,11 @@ func NewEngine(config *config.Config) (engine *Engine, err error) {
 	}
 
 	return engine, nil
+}
+
+func (e *Engine) Close() error {
+	err := e.StopInputStream()
+	return err
 }
 
 func (e *Engine) StartInputStream() error {
@@ -135,37 +117,15 @@ func (e *Engine) StopInputStream() error {
 	return nil
 }
 
-// processInputStream is the core audio processing callback.
-// Performance Critical:
-// - Runs in a dedicated OS thread (LockOSThread)
-// - Uses pre-allocated buffers only
-// - No dynamic allocations in the hot path
+// HOTPATH
 func (e *Engine) processInputStream(in []int32) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
 	copy(e.inputBuffer, in)
 	e.processBuffer(e.inputBuffer)
-
-	// Write to WAV file if recording
-	if atomic.LoadInt32(&e.isRecording) == 1 && e.wavEncoder != nil {
-		for i, sample := range e.inputBuffer {
-			e.sampleBuf.Data[i] = int(sample)
-		}
-
-		e.sampleBuf.Data = e.sampleBuf.Data[:len(e.inputBuffer)]
-
-		if err := e.wavEncoder.Write(e.sampleBuf); err != nil {
-			log.Printf("Error writing to WAV file: %v", err)
-		}
-	}
 }
 
-// processBuffer performs all DSP operations on the audio buffer in-place.
-// Performance Critical (Hot Path):
-// - No allocations
-// - Branchless noise gate implementation
-// - Direct FFT processing call
 func (e *Engine) processBuffer(buffer []int32) {
 	// Determine if FFT processing should occur based on gate.
 	shouldProcessFFT := false

@@ -92,11 +92,11 @@ func main() {
 	}
 
 	// Start recording if enabled in configuration
-	if config.RecordInputStream {
-		if err := engine.StartRecording(config.OutputFile); err != nil {
-			log.Fatal(err)
-		}
-	}
+	// if config.RecordInputStream {
+	// 	if err := engine.StartRecording(config.OutputFile); err != nil {
+	// 		log.Fatal(err)
+	// 	}
+	// }
 
 	if config.TUIMode {
 		fmt.Printf("TUI Mode '%s --help' for usage information.\n", build.GetBuildFlags().Name)
@@ -108,12 +108,12 @@ func main() {
 	// ==================== SHUTDOWN PHASE (Cold Path) ====================
 
 	// Stop recording if active and save the file
-	if config.RecordInputStream {
-		if err := engine.StopRecording(); err != nil {
-			log.Printf("Error stopping recording: %v", err)
-		}
-		fmt.Printf("\nRecording saved to: %s\n", config.OutputFile)
-	}
+	// if config.RecordInputStream {
+	// 	if err := engine.StopRecording(); err != nil {
+	// 		log.Printf("Error stopping recording: %v", err)
+	// 	}
+	// 	fmt.Printf("\nRecording saved to: %s\n", config.OutputFile)
+	// }
 
 	// Clean up audio engine resources
 	if err := engine.Close(); err != nil {
