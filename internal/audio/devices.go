@@ -2,7 +2,6 @@
 package audio
 
 import (
-	"audio/internal/config"
 	"fmt"
 	"time"
 
@@ -28,6 +27,8 @@ type Device struct {
 	IsDefaultOutput          bool
 }
 
+// Initialize initializes the PortAudio library.
+// This should be called ONCE at application startup.
 func Initialize() error {
 	if err := portaudio.Initialize(); err != nil {
 		return err
@@ -35,6 +36,8 @@ func Initialize() error {
 	return nil
 }
 
+// Terminate terminates the PortAudio library.
+// This should be called ONCE at application shutdown.
 func Terminate() error {
 	if err := portaudio.Terminate(); err != nil {
 		return err
@@ -45,11 +48,6 @@ func Terminate() error {
 // HostDevices returns a struct containing information about all available audio
 // devices on the host system. The function initializes PortAudio.
 func HostDevices() ([]Device, error) {
-	if err := Initialize(); err != nil {
-		return nil, err
-	}
-	defer Terminate()
-
 	paDevs, err := paDevices()
 	if err != nil {
 		return nil, err
@@ -91,17 +89,12 @@ func HostDevices() ([]Device, error) {
 // If deviceID is MinDeviceID (-1), returns the system default input device.
 // Returns an error if the device ID is invalid or no such device exists.
 func InputDevice(deviceID int) (*portaudio.DeviceInfo, error) {
-	if err := Initialize(); err != nil {
-		return nil, err
-	}
-	defer Terminate()
-
 	paDevs, err := paDevices()
 	if err != nil {
 		return nil, err
 	}
 
-	if deviceID == config.DefaultDeviceID {
+	if deviceID == -1 {
 		defDevice, err := portaudio.DefaultInputDevice()
 		if err != nil {
 			return nil, err
@@ -112,7 +105,7 @@ func InputDevice(deviceID int) (*portaudio.DeviceInfo, error) {
 	if deviceID < 0 || deviceID >= len(paDevs) {
 		return nil, fmt.Errorf(
 			"invalid device ID: %d (must be between 0 and %d, or %d for default)",
-			deviceID, len(paDevs)-1, config.DefaultDeviceID)
+			deviceID, len(paDevs)-1, -1)
 	}
 
 	if paDevs[deviceID].MaxInputChannels == 0 {
@@ -125,10 +118,12 @@ func InputDevice(deviceID int) (*portaudio.DeviceInfo, error) {
 }
 
 // paDevices returns all available PortAudio devices.
+// Assumes PortAudio is already initialized.
 func paDevices() ([]*portaudio.DeviceInfo, error) {
 	devices, err := portaudio.Devices()
 	if err != nil {
-		return nil, err
+		// Check if the error is "PortAudio not initialized" and return a specific error?
+		return nil, err // PortAudio must be initialized for this to work
 	}
 
 	if devices == nil {

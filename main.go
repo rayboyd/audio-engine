@@ -1,20 +1,17 @@
+// SPDX-License-Identifier: MIT
 package main
 
 import (
-	"audio/cmd"
 	"audio/internal/audio"
 	"audio/internal/config"
-	"audio/pkg/build"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"runtime"
 	"syscall"
 )
 
-// Note: TUI is not implemented yet, ignore placeholders
-//
 // The program flow is divided into three distinct phases:
 //
 // 1. Startup Phase (Cold Path):
@@ -34,91 +31,90 @@ import (
 //   - Stop recording if active
 //   - Clean up resources
 func main() {
-	// ==================== STARTUP PHASE (Cold Path) ====================
+	// ------------------------------------------------------------------------
+	// STARTUP (Cold Path)
+	//
+	// 1. Init portaudio
+	// 2. Parse command line arguments
+	// 3. Execute one-off commands (e.g., device listing)
+	// ------------------------------------------------------------------------
+	// ...
+	// ------------------------------------------------------------------------
 
-	// Initialize build information including version, commit hash, and build time
-	if err := build.Initialize(); err != nil {
-		log.Fatal(err)
-	}
-
-	// Limit OS threads to optimize for real-time audio processing:
-	// - One thread dedicated to audio engine (time-critical)
-	// - One thread for UI and I/O operations
-	runtime.GOMAXPROCS(2)
-
-	// Initialize PortAudio subsystem
 	if err := audio.Initialize(); err != nil {
-		log.Fatal(err)
+		log.Fatalf("FATAL: Failed to initialize PortAudio: %v", err)
 	}
-	defer audio.Terminate()
+	defer func() {
+		// debug
+		log.Println("Terminating PortAudio.")
+		if err := audio.Terminate(); err != nil {
+			// error
+			log.Printf("ERROR: Failed to terminate PortAudio cleanly: %v", err)
+		} else {
+			// debug
+			log.Println("PortAudio terminated.")
+		}
+	}()
 
 	// Parse command line arguments and build configuration
-	config, err := cmd.ParseArgs()
-	if err != nil {
-		log.Fatal(err)
-	}
+	configPath := flag.String("config", "", "Path to config file")
+	listDevices := flag.Bool("list", false, "List available audio devices and exit")
+	flag.Parse()
 
-	// Handle one-off commands (e.g., device listing) that don't require
-	// the audio engine to be running
-	if config.Command != "" {
+	// Handle the list flag as a special case for backwards compatibility
+	if *listDevices {
+		config := config.DefaultConfig()
+		config.Command = "list"
 		if err := executeCommand(config); err != nil {
-			log.Fatal(err)
+			log.Fatalf("FATAL: Failed to execute command 'list' %v", err)
 		}
 		return
 	}
 
-	// Exit if not running in TUI mode
-	if !config.TUIMode {
-		return
+	// Load configuration from file
+	config, err := config.LoadConfig(*configPath)
+	if err != nil {
+		log.Fatalf("FATAL: Failed to load configuration %v", err)
+	}
+
+	// Debug mode setup
+	if config.Debug {
+		log.Println("Debug mode enabled.")
 	}
 
 	// ==================== CONCURRENT PHASE (Hot Path) ====================
 
-	// Setup signal handling for graceful shutdown
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
-
-	// Initialize and start the audio engine
+	// Initialize the audio engine
 	engine, err := audio.NewEngine(config)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("FATAL: Failed to create audio engine: %v", err)
 	}
+	// Defer engine close AFTER successful creation
+	defer engine.Close()
 
 	// CRITICAL: Start of real-time audio processing
 	// The first call to StartInputStream triggers PortAudio to begin
 	// calling the callback function, marking the start of the hot path
 	if err := engine.StartInputStream(); err != nil {
-		log.Fatal(err)
+		log.Fatalf("FATAL: Failed to start audio stream: %v", err)
 	}
+	log.Println("Audio stream started. Waiting for interrupt signal (Ctrl+C)...")
 
-	// Start recording if enabled in configuration
-	// if config.RecordInputStream {
-	// 	if err := engine.StartRecording(config.OutputFile); err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// }
+	// --- Graceful Shutdown Handling ---
+	// Setup ONE channel to listen for SIGINT (Ctrl+C) or SIGTERM
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	if config.TUIMode {
-		fmt.Printf("TUI Mode '%s --help' for usage information.\n", build.GetBuildFlags().Name)
-	}
+	// Block execution until a signal is received
+	<-quit
+	log.Println("") // Newline for cleaner shutdown logging
+	log.Println("Shutdown signal received, stopping engine...")
 
-	// Block until termination signal is received
-	<-done
-
-	// ==================== SHUTDOWN PHASE (Cold Path) ====================
-
-	// Stop recording if active and save the file
-	// if config.RecordInputStream {
-	// 	if err := engine.StopRecording(); err != nil {
-	// 		log.Printf("Error stopping recording: %v", err)
-	// 	}
-	// 	fmt.Printf("\nRecording saved to: %s\n", config.OutputFile)
-	// }
-
-	// Clean up audio engine resources
-	if err := engine.Close(); err != nil {
-		log.Printf("Error closing audio engine: %v", err)
-	}
+	// --- Shutdown Phase (Cold Path) ---
+	// Engine Close is handled by defer
+	log.Println("Engine stopped.")
+	// PortAudio Terminate is handled by defer
+	log.Println("Grec V2 finished.")
 }
 
 // executeCommand handles one-off commands that don't require the audio engine
@@ -126,7 +122,7 @@ func main() {
 func executeCommand(cfg *config.Config) error {
 	switch cfg.Command {
 	case "list":
-		devices, err := audio.HostDevices()
+		devices, err := audio.HostDevices() // Assumes PortAudio is initialized
 		if err != nil {
 			return fmt.Errorf("failed to list devices: %w", err)
 		}
@@ -143,7 +139,7 @@ func executeCommand(cfg *config.Config) error {
 			printDeviceDetails(device)
 		}
 
-	// ... (other cases) ...
+	// TODO: Add other cases for commands like 'version', 'help' if needed
 	default:
 		return fmt.Errorf("unknown command: %s", cfg.Command)
 	}

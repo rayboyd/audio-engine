@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spectrum Analyzer (Smoothed + Peaks)</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            color: #eee;
+            font-family: system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            display: block;
+            background-color: #1a1a1a;
+        }
+
+        .info-bar {
+            padding: 10px;
+            text-align: center;
+            color: #0ff;
+            font-size: 14px;
+            width: 90%;
+            max-width: 1200px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="visualizerCanvas"></canvas>
+    <div class="info-bar">
+        Smoothed Bars + Peaks | FFT Bands: <span id="band-count">0</span> | Status: <span
+            id="ws-status">Connecting...</span>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('visualizerCanvas');
+        const ctx = canvas.getContext('2d');
+        const bandCountElement = document.getElementById('band-count');
+        const wsStatusElement = document.getElementById('ws-status');
+
+        // --- Configuration (Combining elements from both versions) ---
+        const barWidthScale = 0.9;      // How much of the allocated space each bar fills
+        const maxBarHeightScale = 0.95; // Use more of the canvas height for bars
+        const minBarHeight = 1;         // Minimum pixels for a bar
+        const decayRate = 0.98;         // How fast peaks fall (from index.html context)
+        const smoothingFactor = 0.2;    // Smoothing for bar height changes (from index.html context)
+        const peakLineColor = 'rgba(255, 255, 255, 0.7)'; // Peak line style (from index.html context)
+        const peakLineWidth = 2;        // Peak line height (from index.html context)
+
+
+        // --- State ---
+        let latestBandData = null;
+        let numBands = 0;
+        let animationFrameId = null;
+        let peaks = [];                 // Array to store peak values for each band
+        let currentBarHeights = [];     // Array to store the current animated height for smoothing
+
+        // --- WebSocket Connection (Same as before) ---
+        const socketUrl = 'ws://localhost:8080/fft';
+        let socket;
+
+        function connectWebSocket() {
+            console.log(`Attempting to connect to ${socketUrl}...`);
+            wsStatusElement.textContent = 'Connecting...';
+            socket = new WebSocket(socketUrl);
+
+            socket.onopen = function (event) {
+                console.log('WebSocket connection opened');
+                wsStatusElement.textContent = 'Connected';
+                resizeCanvas();
+                if (!animationFrameId) {
+                    drawVisualization();
+                }
+            };
+
+            socket.onclose = function (event) {
+                console.log(`WebSocket connection closed (Code: ${event.code}, Reason: ${event.reason})`);
+                wsStatusElement.textContent = `Disconnected. Retrying...`;
+                latestBandData = null;
+                numBands = 0;
+                bandCountElement.textContent = numBands;
+                // Reset peaks and current heights on disconnect
+                peaks = [];
+                currentBarHeights = [];
+                if (ctx) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            socket.onerror = function (error) {
+                console.error('WebSocket error:', error);
+                wsStatusElement.textContent = 'Error';
+            };
+
+            socket.onmessage = function (event) {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    // Check the type of message received
+                    if (data && data.type === "fft" && data.magnitudes) {
+                        latestBandData = data.magnitudes;
+                        // Update band count display if it changed (less likely now)
+                        if (numBands !== latestBandData.length) {
+                            numBands = latestBandData.length;
+                            bandCountElement.textContent = numBands;
+                            // Reset peaks/heights if band count changes
+                            peaks = new Array(numBands).fill(0);
+                            currentBarHeights = new Array(numBands).fill(0);
+                        }
+                    } else if (data && data.type === "event" && data.name) {
+                        // Handle events (e.g., kick drum)
+                        console.log(`Received event: ${data.name}`);
+                        // Example: Flash background briefly
+                        document.body.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
+                        setTimeout(() => {
+                            document.body.style.backgroundColor = ''; // Reset background
+                        }, 100); // Flash duration
+                    } else if (data && data.type === "energy") {
+                        // Optional: Handle energy data if you uncommented it in Go
+                        // console.log(`Received energy: ${data.value}`);
+                        // You could display this value or use it for another visualization
+                    }
+                    else {
+                        console.warn("Received unexpected data format or type:", data);
+                        // Decide if you want to clear latestBandData here
+                        // latestBandData = null;
+                    }
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e, event.data);
+                    latestBandData = null; // Clear data on parse error
+                }
+            };
+        }
+
+        // Helper to resize arrays while preserving content
+        function resizeArray(arr, newSize, defaultValue) {
+            const oldSize = arr.length;
+            if (oldSize === newSize) return arr;
+            const newArr = new Array(newSize).fill(defaultValue);
+            const copyLength = Math.min(oldSize, newSize);
+            for (let i = 0; i < copyLength; i++) {
+                newArr[i] = arr[i];
+            }
+            return newArr;
+        }
+
+
+        // --- Color Function (Same as before) ---
+        function getBarColor(index, value, totalBands) {
+            if (totalBands === 0) return 'rgb(100, 100, 100)';
+
+            const normalizedIndex = index / (totalBands - 1);
+            let r, g, b;
+
+            if (normalizedIndex < 0.25) { r = 0; g = Math.floor(255 * normalizedIndex * 4); b = 255; }
+            else if (normalizedIndex < 0.5) { r = 0; g = 255; b = Math.floor(255 * (1 - (normalizedIndex - 0.25) * 4)); }
+            else if (normalizedIndex < 0.75) { r = Math.floor(255 * (normalizedIndex - 0.5) * 4); g = 255; b = 0; }
+            else { r = 255; g = Math.floor(255 * (1 - (normalizedIndex - 0.75) * 4)); b = 0; }
+
+            const intensity = Math.max(0.3, Math.min(1, value * 1.5));
+            r = Math.floor(r * intensity); g = Math.floor(g * intensity); b = Math.floor(b * intensity);
+
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+
+        // --- Drawing Function (Canvas Implementation with Smoothing and Peaks) ---
+        function drawVisualization() {
+            animationFrameId = requestAnimationFrame(drawVisualization);
+
+            if (!ctx) return; // Need context
+
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+            const currentNumBands = numBands; // Use the state variable
+
+            // --- Drawing ---
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+            if (currentNumBands === 0) return; // Nothing to draw if no bands
+
+            const totalBarWidth = canvasWidth / currentNumBands;
+            const actualBarWidth = totalBarWidth * barWidthScale;
+            const barSpacing = totalBarWidth * (1 - barWidthScale);
+            const maxH = canvasHeight * maxBarHeightScale;
+
+            // Apply decay to peaks before drawing
+            for (let i = 0; i < currentNumBands; i++) {
+                peaks[i] *= decayRate;
+            }
+
+            for (let i = 0; i < currentNumBands; i++) {
+                const value = latestBandData ? (latestBandData[i] || 0) : 0; // Get value from latest data
+                const clampedValue = Math.max(0, Math.min(1, value));
+
+                // Calculate target height for this frame
+                const targetHeight = Math.max(minBarHeight, clampedValue * maxH);
+
+                // Apply smoothing: Move current height towards target height
+                currentBarHeights[i] += (targetHeight - currentBarHeights[i]) * smoothingFactor;
+                // Ensure minimum height after smoothing
+                const barHeight = Math.max(minBarHeight, currentBarHeights[i]);
+
+
+                // Update peak if current value is higher
+                if (targetHeight > peaks[i]) {
+                    peaks[i] = targetHeight;
+                }
+
+                // Calculate position
+                const x = i * totalBarWidth + barSpacing / 2;
+                const y = canvasHeight - barHeight; // Bars grow up from bottom
+
+                // Set color
+                ctx.fillStyle = getBarColor(i, clampedValue, currentNumBands); // Color based on raw value
+
+                // Draw the smoothed bar
+                ctx.fillRect(x, y, actualBarWidth, barHeight);
+
+                // Draw the peak indicator line
+                if (peaks[i] > minBarHeight) { // Only draw peak if it's visible
+                    const peakY = canvasHeight - peaks[i];
+                    // Ensure peak line doesn't draw above the canvas top
+                    const effectivePeakY = Math.max(0, peakY - peakLineWidth / 2);
+
+                    ctx.fillStyle = peakLineColor;
+                    ctx.fillRect(x, effectivePeakY, actualBarWidth, peakLineWidth);
+                }
+            }
+        }
+
+        // --- Canvas Resizing (Same as before) ---
+        function resizeCanvas() {
+            const desiredWidth = window.innerWidth * 0.9;
+            const desiredHeight = window.innerHeight * 0.7;
+
+            canvas.width = Math.min(desiredWidth, 1200);
+            canvas.height = Math.min(desiredHeight, 600);
+
+            const infoBar = document.querySelector('.info-bar');
+            if (infoBar) {
+                infoBar.style.width = `${canvas.width}px`;
+            }
+            console.log(`Canvas resized to ${canvas.width}x${canvas.height}`);
+        }
+
+        // --- Initialization ---
+        window.addEventListener('resize', resizeCanvas);
+        connectWebSocket();
+
+    </script>
+</body>
+
+</html>

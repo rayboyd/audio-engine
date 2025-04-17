@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Data Monitor</title>
+    <style>
+        body {
+            font-family: monospace;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            padding: 10px;
+        }
+
+        .data-section {
+            margin-bottom: 15px;
+            border: 1px solid #555;
+            padding: 10px;
+            background-color: #252526;
+        }
+
+        h1 {
+            color: #dcdcaa;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #9cdcfe;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+            background-color: #1e1e1e;
+            padding: 5px;
+            border: 1px solid #444;
+        }
+
+        #events-list {
+            list-style: none;
+            padding-left: 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        #events-list li {
+            background-color: #333;
+            margin-bottom: 5px;
+            padding: 3px 5px;
+            border-radius: 2px;
+            font-size: 0.9em;
+        }
+
+        #status {
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .status-connected {
+            color: #4ec9b0;
+        }
+
+        .status-disconnected {
+            color: #f44747;
+        }
+
+        .status-connecting {
+            color: #ce9178;
+        }
+
+        .beat-counter {
+            display: flex;
+            gap: 10px;
+            /* Space between squares */
+            margin-bottom: 15px;
+        }
+
+        .beat-indicator {
+            width: 40px;
+            height: 40px;
+            background-color: #444;
+            /* Default background */
+            border: 1px solid #666;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #ccc;
+            transition: background-color 0.1s ease-out;
+            /* Smooth transition */
+        }
+
+        .beat-indicator.active {
+            background-color: #f44747;
+            /* Red background for active beat */
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Audio Data Monitor</h1>
+
+    <!-- Beat Counter Visualization -->
+    <div class="beat-counter">
+        <div class="beat-indicator" id="beat-1">1</div>
+        <div class="beat-indicator" id="beat-2">2</div>
+        <div class="beat-indicator" id="beat-3">3</div>
+        <div class="beat-indicator" id="beat-4">4</div>
+    </div>
+
+    <div id="status" class="status-connecting">Status: Connecting...</div>
+
+    <div class="data-section">
+        <h2>Latest FFT Data</h2>
+        <pre id="fft-data">Waiting for FFT data...</pre>
+    </div>
+
+    <div class="data-section">
+        <h2>Events Log</h2>
+        <ul id="events-list">
+            <li>Waiting for events...</li>
+        </ul>
+    </div>
+
+    <script>
+        const statusElement = document.getElementById('status');
+        const fftDataElement = document.getElementById('fft-data');
+        const eventsListElement = document.getElementById('events-list');
+
+        const wsPort = "8080"; // Make sure this matches the Go server port
+        const wsUrl = `ws://${window.location.hostname}:${wsPort}/fft`;
+        let socket;
+        let firstEvent = true; // Flag to clear initial "Waiting" message
+
+        // --- Beat Counter State ---
+        const beatIndicators = [
+            document.getElementById('beat-1'),
+            document.getElementById('beat-2'),
+            document.getElementById('beat-3'),
+            document.getElementById('beat-4'),
+        ];
+        let currentBeat = 0; // Start at 0, will become 1 on first beat
+        // -------------------------
+
+        function connectWebSocket() {
+            setStatus('Connecting...', 'connecting');
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = function (event) {
+                // console.log('WebSocket connection opened');
+                setStatus('Connected', 'connected');
+            };
+
+            socket.onmessage = function (event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    const timestamp = new Date().toLocaleTimeString();
+
+                    // Check the type of message received
+                    if (data && data.type === "fft" && Array.isArray(data.magnitudes)) {
+                        // Display FFT data (limit array length for readability if needed)
+                        const displayData = {
+                            ...data,
+                            magnitudes: `[${data.magnitudes.slice(0, 10).join(', ')} ... (${data.magnitudes.length} total)]` // Show first few + count
+                        };
+                        fftDataElement.textContent = JSON.stringify(displayData, null, 2);
+
+                    } else if (data && data.type === "event" && data.name) { // Assuming 'kick' is our beat trigger
+                        // --- Beat Counter Logic ---
+                        currentBeat = (currentBeat % 4) + 1; // Increment 1-4 cycle
+                        updateBeatIndicator(currentBeat); // Call the update function
+                        // -------------------------
+
+                        // Add event to the list
+                        if (firstEvent) {
+                            eventsListElement.innerHTML = ''; // Clear "Waiting" message
+                            firstEvent = false;
+                        }
+                        const listItem = document.createElement('li');
+                        listItem.textContent = `${timestamp} - Event: ${data.name} (Beat ${currentBeat}) ${JSON.stringify(data)}`; // Add beat count to log
+                        eventsListElement.appendChild(listItem);
+                        // Auto-scroll to bottom
+                        eventsListElement.scrollTop = eventsListElement.scrollHeight;
+
+                    } else {
+                        // Log unexpected data format
+                        console.warn("Received unexpected data format or type. Raw:", event.data, "Parsed:", data);
+                    }
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e, event.data);
+                }
+            };
+
+            socket.onclose = function (event) {
+                // console.log('WebSocket connection closed:', event);
+                setStatus('Closed. Retrying...', 'disconnected');
+                fftDataElement.textContent = 'Connection closed.';
+                // Reset beat counter on disconnect
+                currentBeat = 0;
+                updateBeatIndicator(0); // Clear active indicator
+                // Attempt to reconnect after a delay
+                setTimeout(connectWebSocket, 5000); // Retry every 5 seconds
+            };
+
+            socket.onerror = function (error) {
+                // console.error('WebSocket error:', error);
+                setStatus('Error', 'disconnected');
+                fftDataElement.textContent = 'Connection error.';
+                // The onclose event will likely fire next, triggering reconnection logic
+            };
+        }
+
+        function setStatus(message, statusClass) {
+            statusElement.textContent = `Status: ${message}`;
+            statusElement.className = `status-${statusClass}`;
+        }
+
+        // --- Function to update beat indicators ---
+        function updateBeatIndicator(beatNumber) {
+            beatIndicators.forEach((indicator, index) => {
+                // index is 0-based, beatNumber is 1-based
+                if ((index + 1) === beatNumber) {
+                    indicator.classList.add('active');
+                } else {
+                    indicator.classList.remove('active');
+                }
+            });
+        }
+        // -------------------------------------------
+
+        // --- Initial Setup ---
+        connectWebSocket(); // Start WebSocket connection
+
+    </script>
+</body>
+
+</html>

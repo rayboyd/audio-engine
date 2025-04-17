@@ -2,7 +2,6 @@
 package audio
 
 import (
-	"audio/internal/config"
 	"strings"
 	"testing"
 
@@ -76,7 +75,7 @@ func TestHostDevices(t *testing.T) {
 }
 
 func TestInputDevice(t *testing.T) {
-	device, err := InputDevice(config.DefaultDeviceID)
+	device, err := InputDevice(-1)
 	if err != nil {
 		t.Logf("Could not get default input device: %v - some tests skipped", err)
 	} else {

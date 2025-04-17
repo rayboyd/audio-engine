@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>FFT Visualizer</title>
+    <script>
+        let ws = new WebSocket('ws://localhost:8080/ws');
+
+        ws.onopen = function () {
+            console.log('Connected to WebSocket');
+        };
+
+        ws.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+            console.log('Received:', data);
+
+            // Handle different data types
+            if (Array.isArray(data)) {
+                // FFT data array
+                updateVisualization(data);
+            } else if (data.fftSize !== undefined) {
+                // Metadata
+                updateMetadata(data);
+            }
+        };
+
+        function updateVisualization(fftData) {
+            // Your visualization code here
+        }
+
+        function updateMetadata(metadata) {
+            document.getElementById('fft-size').textContent = metadata.fftSize;
+            document.getElementById('energy').textContent = metadata.energy.toFixed(6);
+        }
+    </script>
+</head>
+
+<body>
+    <h1>FFT Visualizer</h1>
+    <div>FFT Size: <span id="fft-size">-</span></div>
+    <div>Energy: <span id="energy">-</span></div>
+    <div id="visualization"></div>
+</body>
+
+</html>

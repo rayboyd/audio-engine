@@ -1,68 +1,124 @@
 package config
 
-// Core configuration constants that define the boundaries and defaults
-// for the audio processing engine.
-const (
-	// Default values for the audio engine configuration
-	DefaultChannels          = 1           // Mono audio
-	DefaultDeviceID          = MinDeviceID // Default to system default device
-	DefaultFormat            = "wav"       // WAV file format for recordings
-	DefaultFramesPerBuffer   = 512         // Balanced latency/performance
-	DefaultLowLatency        = false       // Standard latency mode
-	DefaultSampleRate        = 44100       // CD-quality audio
-	DefaultRecordInputStream = false       // Don't record by default
-	DefaultOutputFile        = ""          // Auto-generated filename
-	DefaultCommand           = ""          // No command by default
-	DefaultVerbosity         = false       // Quiet operation
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
-	// Hardware and processing limits
-	MinDeviceID     = -1     // -1 represents system default device
-	MinSampleRate   = 8000   // Minimum usable sample rate (Hz)
-	MaxSampleRate   = 192000 // Maximum supported sample rate (Hz)
-	MaxBufferFrames = 8192   // Maximum frames per buffer (power of 2)
-
-	// Error handling configuration
-	DefaultMaxConsecutiveWriteFailures = 5 // Max failures before stopping
+	"gopkg.in/yaml.v3"
 )
 
-// Config holds all runtime configuration options for the audio engine.
-// It is constructed via command line flags and/or configuration files.
 type Config struct {
-	// Audio Device Settings
-	Channels        int     // Number of audio channels (1=mono, 2=stereo)
-	DeviceID        int     // Input device identifier
-	Format          string  // Recording format (wav only for now)
-	FramesPerBuffer int     // Buffer size in frames
-	LowLatency      bool    // Use low latency mode
-	SampleRate      float64 // Sample rate in Hz
+	Debug    bool   `yaml:"debug"`
+	LogLevel string `yaml:"log_level"`
 
-	// Recording Options
-	RecordInputStream bool   // Whether to record input
-	OutputFile        string // Output file path for recordings
+	// A one-off command to execute.
+	// e.g., "list" to list available audio devices.
+	Command string `yaml:"command,omitempty"`
 
-	// Debug Options
-	Verbose bool   // Enable verbose logging
-	Command string // One-off command to execute
-	TUIMode bool   // Terminal UI mode enabled
+	Audio struct {
+		InputDevice       int     `yaml:"input_device"`
+		OutputDevice      int     `yaml:"output_device"`
+		SampleRate        float64 `yaml:"sample_rate"`
+		FramesPerBuffer   int     `yaml:"frames_per_buffer"`
+		LowLatency        bool    `yaml:"low_latency"`
+		InputChannels     int     `yaml:"input_channels"`
+		OutputChannels    int     `yaml:"output_channels"`
+		UseDefaultDevices bool    `yaml:"use_default_devices"`
+	} `yaml:"audio"`
 
-	// FFT Analysis Settings
-	FFTBands int // Number of frequency bands
+	Recording struct {
+		Enabled     bool    `yaml:"enabled"`
+		OutputDir   string  `yaml:"output_dir"`
+		Format      string  `yaml:"format"`
+		BitDepth    int     `yaml:"bit_depth"`
+		MaxDuration int     `yaml:"max_duration_seconds"`
+		SilenceTh   float64 `yaml:"silence_threshold"`
+	} `yaml:"recording"`
 }
 
-// NewConfig creates a new Config instance with default values.
-// This is typically used as the base configuration before
-// applying command line arguments or config file settings.
-func NewConfig() *Config {
-	return &Config{
-		Channels:          DefaultChannels,
-		DeviceID:          DefaultDeviceID,
-		Format:            DefaultFormat,
-		FramesPerBuffer:   DefaultFramesPerBuffer,
-		LowLatency:        DefaultLowLatency,
-		SampleRate:        DefaultSampleRate,
-		RecordInputStream: DefaultRecordInputStream,
-		OutputFile:        DefaultOutputFile,
-		Command:           DefaultCommand,
-		Verbose:           DefaultVerbosity,
+func DefaultConfig() *Config {
+	cfg := &Config{
+		Debug:    false,
+		LogLevel: "info",
+	}
+
+	cfg.Audio.InputDevice = -1 // default
+	cfg.Audio.OutputDevice = -1
+	cfg.Audio.SampleRate = 44100
+	cfg.Audio.FramesPerBuffer = 1024
+	cfg.Audio.InputChannels = 2
+	cfg.Audio.OutputChannels = 2
+	cfg.Audio.UseDefaultDevices = true
+
+	cfg.Recording.Enabled = false
+	cfg.Recording.OutputDir = "recordings"
+	cfg.Recording.Format = "wav"
+	cfg.Recording.BitDepth = 16
+	cfg.Recording.MaxDuration = 0 // unlimited
+	cfg.Recording.SilenceTh = 0.01
+
+	return cfg
+}
+
+func LoadConfig(path string) (*Config, error) {
+	cfg := DefaultConfig()
+	if path == "" {
+		candidates := []string{
+			"config.yaml",
+			// filepath.Join(os.Getenv("HOME"), ".config/config.yaml"),
+			// "/etc/config.yaml",
+		}
+		for _, candidate := range candidates {
+			if _, err := os.Stat(candidate); err == nil {
+				path = candidate
+				break
+			}
+		}
+		if path == "" {
+			return cfg, nil
+		}
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	cfg.applyEnvOverrides()
+
+	return cfg, nil
+}
+
+func (cfg *Config) SaveConfig(path string) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	return nil
+}
+
+func (cfg *Config) applyEnvOverrides() {
+	if env := os.Getenv("GREC_DEBUG"); env != "" {
+		cfg.Debug = strings.ToLower(env) == "true"
+	}
+	if env := os.Getenv("GREC_LOG_LEVEL"); env != "" {
+		cfg.LogLevel = env
+	}
+	if env := os.Getenv("GREC_COMMAND"); env != "" {
+		cfg.Command = env
+	}
+	if env := os.Getenv("GREC_RECORDING_ENABLED"); env != "" {
+		cfg.Recording.Enabled = strings.ToLower(env) == "true"
 	}
 }
