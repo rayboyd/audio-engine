@@ -1,40 +1,42 @@
-// SPDX-License-Identifier: MIT
 package audio
 
 import (
 	"audio/internal/analysis"
 	"audio/internal/config"
-	"audio/internal/transport" // Use websocket transport implementation
+	applog "audio/internal/log"
+	udpTransport "audio/internal/transport/udp"
 	"fmt"
-	"log"
-	"runtime"
 	"sync"
 	"time"
 
 	"github.com/gordonklaus/portaudio"
 )
 
-// Engine manages the PortAudio input stream and dispatches buffers.
+// Engine manages the PortAudio input stream and dispatches buffers to registered processors.
 type Engine struct {
-	config *config.Config
-
+	config       *config.Config
+	stream       *portaudio.Stream
 	inputDevice  *portaudio.DeviceInfo
 	inputLatency time.Duration
-	inputStream  *portaudio.Stream
+	processors   []analysis.AudioProcessor
+	closables    []interface{ Close() error }
+	streamActive bool
+	streamMu     sync.Mutex
 
-	processors []any
-	procMutex  sync.RWMutex
-
-	transport transport.Transport
-
-	// Store specific processor types if needed for dependencies
-	fftProvider transport.FFTResultProvider // Store the provider (which will be the FFT processor instance)
+	udpSender    *udpTransport.UDPSender
+	udpPublisher *udpTransport.UDPPublisher
 }
 
-// NewEngine creates a new audio engine instance.
+// NewEngine creates and initializes a new audio engine instance.
 func NewEngine(config *config.Config) (*Engine, error) {
+	if err := portaudio.Initialize(); err != nil {
+		// Errorf might be better here than Fatalf, let caller decide fatality
+		return nil, fmt.Errorf("engine: failed to initialize PortAudio: %w", err)
+	}
+
 	inputDevice, err := InputDevice(config.Audio.InputDevice)
 	if err != nil {
+		portaudio.Terminate()
 		return nil, fmt.Errorf("engine: failed to get input device: %w", err)
 	}
 
@@ -45,240 +47,205 @@ func NewEngine(config *config.Config) (*Engine, error) {
 		latency = inputDevice.DefaultHighInputLatency
 	}
 
-	// --- Use LoggingTransport ---
-	// transport := transport.NewLoggingTransport()
-	transport := transport.NewWebSocketTransport(":8080")
-	// transport := transport.NewWebSocketTransport(config.WebSocket.Address, config.WebSocket.WebRoot)
-	// --- End Transport Change ---
-
 	engine := &Engine{
 		config:       config,
 		inputDevice:  inputDevice,
 		inputLatency: latency,
-		processors:   make([]any, 0),
-		transport:    transport,
+		processors:   make([]analysis.AudioProcessor, 0),
+		closables:    make([]interface{ Close() error }, 0),
 	}
 
-	//
-	/// Use Engine config from here on in
-
 	// --- Processor Registration ---
+	fftWindowFunc, err := analysis.ParseWindowFunc(engine.config.Audio.FFTWindow)
+	if err != nil {
+		applog.Warnf("Engine Core: %v. Using default FFT window (Hann).", err) // Use Warnf
+	}
 
-	// FFT Processing
-	fftProcessor := analysis.NewFFTProcessor(
+	fftProcessor, err := analysis.NewFFTProcessor(
 		engine.config.Audio.FramesPerBuffer,
 		engine.config.Audio.SampleRate,
-		engine.transport,
-		analysis.BartlettHann,
+		fftWindowFunc,
 	)
+	if err != nil {
+		portaudio.Terminate()
+		return nil, fmt.Errorf("engine: failed to create FFT processor: %w", err)
+	}
 	engine.RegisterProcessor(fftProcessor)
-	engine.fftProvider = fftProcessor
 
-	// Band Energy Processing
-	bandEnergyProcessor := analysis.NewBandEnergyProcessor(
-		engine.transport,
-		engine.fftProvider,
-	)
-	engine.RegisterProcessor(bandEnergyProcessor)
+	// --- Transport Setup ---
+	if config.Transport.UDPEnabled {
+		applog.Info("Engine Core: Setting up UDP transport...") // Use Info
+		// Pass config.Debug to NewUDPSender
+		sender, err := udpTransport.NewUDPSender(config.Transport.UDPTargetAddress)
+		if err != nil {
+			engine.Close()
+			return nil, fmt.Errorf("engine: failed to create UDP sender: %w", err)
+		}
+		engine.udpSender = sender
+		engine.closables = append(engine.closables, sender)
 
-	// Beat Detection
-	beatProcessor := analysis.NewBeatDetector(
-		0.2,
-		2.0,
-		engine.config.Audio.SampleRate,
-		engine.config.Audio.FramesPerBuffer,
-		engine.transport,
-	)
-	engine.RegisterProcessor(beatProcessor)
+		publisher, err := udpTransport.NewUDPPublisher(
+			config.Transport.UDPSendInterval,
+			sender,
+			fftProcessor,
+		)
+		if err != nil {
+			engine.Close()
+			return nil, fmt.Errorf("engine: failed to create UDP publisher: %w", err)
+		}
+		engine.udpPublisher = publisher
+		engine.closables = append(engine.closables, publisher)
+		applog.Infof("Engine Core: UDP transport initialized (Target: %s, Interval: %s)", // Use Infof
+			config.Transport.UDPTargetAddress, config.Transport.UDPSendInterval)
+	} else {
+		applog.Info("Engine Core: UDP transport is disabled.") // Use Info
+	}
 
-	// --- End Processor Registration ---
-
-	// log.Printf("Engine Core: Initialized with %d channels, %d frames/buffer, %.2f Hz sample rate.",
-	// 	config.Channels, config.FramesPerBuffer, config.SampleRate)
-	// log.Printf("Engine Core: Using input device '%s' with latency %v.", inputDevice.Name, engine.inputLatency)
-	// log.Printf("Engine Core: Using FFT window function: %s", configWindowName)
+	applog.Infof("Engine Core: Initialized with %d input channels, %d frames/buffer, %.1f Hz sample rate.", // Use Infof
+		config.Audio.InputChannels, config.Audio.FramesPerBuffer, config.Audio.SampleRate)
+	applog.Infof("Engine Core: Using input device '%s' with latency %v.", inputDevice.Name, engine.inputLatency) // Use Infof
 
 	return engine, nil
 }
 
-// RegisterProcessor adds a processor to the engine's list.
-func (e *Engine) RegisterProcessor(p any) {
-	if p == nil {
-		log.Println("Engine Core: Attempted to register a nil processor.")
-		return
-	}
-	e.procMutex.Lock()
-	defer e.procMutex.Unlock()
-	log.Printf("Engine Core: Registering processor %T", p)
-	e.processors = append(e.processors, p)
-}
-
-// processInputStream is the PortAudio callback (HOTPATH).
-func (e *Engine) processInputStream(in []int32) {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	// 1. Process FFT first
-	fftProcessed := false
-	if e.fftProvider != nil {
-		// Check if the stored provider implements the raw audio Processor interface
-		if fftProc, ok := e.fftProvider.(transport.Processor); ok {
-			// log.Println("DEBUG: Calling FFT Process") // Add temporary debug log
-			fftProc.Process(in) // This calculates FFT and should call Send internally
-			fftProcessed = true
-			// log.Println("DEBUG: FFT Process finished") // Add temporary debug log
-		} else {
-			log.Printf("Engine Core: ERROR - fftProvider (%T) does not implement transport.Processor!", e.fftProvider)
-		}
+// RegisterProcessor adds an AudioProcessor to the engine's processing chain.
+func (e *Engine) RegisterProcessor(processor analysis.AudioProcessor) {
+	e.processors = append(e.processors, processor)
+	if closable, ok := processor.(interface{ Close() error }); ok {
+		e.closables = append(e.closables, closable)
+		applog.Debugf("Engine Core: Registered closable processor %T", processor) // Use Debugf
 	} else {
-		log.Println("Engine Core: WARNING - fftProvider is nil in processInputStream.")
+		applog.Debugf("Engine Core: Registered processor %T", processor) // Use Debugf
 	}
-
-	// 2. Process other processors
-	e.procMutex.RLock()
-	processorsToProcess := make([]interface{}, len(e.processors))
-	copy(processorsToProcess, e.processors)
-	e.procMutex.RUnlock()
-
-	for _, proc := range processorsToProcess {
-		switch p := proc.(type) {
-		case *analysis.FFTProcessor: // FFT Processor concrete type
-			// Already processed above via e.fftProvider, do nothing here.
-			// log.Println("DEBUG: Skipping FFT in loop") // Add temporary debug log
-		case *analysis.BeatDetector:
-			// BeatDetector needs the raw audio buffer
-			// log.Println("DEBUG: Calling BeatDetector Process") // Add temporary debug log
-			p.Process(in) // Sends beat events via its internal transport
-			// log.Println("DEBUG: BeatDetector Process finished") // Add temporary debug log
-		case *analysis.BandEnergyProcessor:
-			// BandEnergyProcessor depends on FFT results having been calculated
-			if fftProcessed {
-				// log.Println("DEBUG: Calling BandEnergy Process") // Add temporary debug log
-				p.Process() // Uses data from fftProvider internally and sends band energy
-				// log.Println("DEBUG: BandEnergy Process finished") // Add temporary debug log
-			} else {
-				// log.Println("DEBUG: Skipping BandEnergy as FFT not processed") // Add temporary debug log
-			}
-		default:
-			log.Printf("Engine Core: WARNING - Unknown processor type in loop: %T", p)
-		}
-	}
-	// log.Println("DEBUG: processInputStream finished cycle") // Add temporary debug log
 }
 
-// StartInputStream opens and starts the PortAudio stream.
+// processInputStream is the PortAudio callback function (HOT PATH).
+func (e *Engine) processInputStream(in []int32) {
+	// Keep this path clean - NO LOGGING HERE
+	for _, processor := range e.processors {
+		processor.Process(in)
+	}
+}
+
+// StartInputStream opens and starts the PortAudio input stream.
 func (e *Engine) StartInputStream() error {
-	e.procMutex.RLock()
-	numProc := len(e.processors)
-	e.procMutex.RUnlock()
-	if numProc == 0 {
-		log.Println("Engine Core: Warning - Starting stream with no registered processors.")
-	}
+	e.streamMu.Lock()
+	defer e.streamMu.Unlock()
 
-	params := portaudio.StreamParameters{
-		Input: portaudio.StreamDeviceParameters{
-			Channels: e.config.Audio.InputChannels,
-			Device:   e.inputDevice,
-			Latency:  e.inputLatency,
-		},
-		Output: portaudio.StreamDeviceParameters{
-			Channels: 0, Device: nil,
-		},
-		FramesPerBuffer: e.config.Audio.FramesPerBuffer,
-		SampleRate:      e.config.Audio.SampleRate,
-	}
-
-	log.Printf("Engine Core: Opening stream with params: %+v", params.Input)
-	stream, err := portaudio.OpenStream(params, e.processInputStream)
-	if err != nil {
-		return fmt.Errorf("engine core: failed to open stream: %w", err)
-	}
-	e.inputStream = stream
-	log.Println("Engine Core: Stream opened.")
-
-	log.Println("Engine Core: Starting stream...")
-	if err := e.inputStream.Start(); err != nil {
-		if closeErr := e.inputStream.Close(); closeErr != nil {
-			log.Printf("Engine Core: Failed to close stream after start failure: %v", closeErr)
-		}
-		e.inputStream = nil
-		return fmt.Errorf("engine core: failed to start stream: %w", err)
-	}
-	log.Println("Engine Core: Stream started successfully.")
-	return nil
-}
-
-// StopInputStream stops and closes the PortAudio stream.
-func (e *Engine) StopInputStream() error {
-	log.Println("Engine Core: Stopping input stream...")
-	if e.inputStream == nil {
-		log.Println("Engine Core: Input stream was already nil.")
+	if e.streamActive {
+		applog.Warn("Engine Core: Stream already active.") // Use Warn
 		return nil
 	}
 
-	var firstErr error
-	log.Println("Engine Core: Stopping PortAudio stream...")
-	if err := e.inputStream.Stop(); err != nil {
-		log.Printf("Engine Core: Error stopping PortAudio stream: %v", err)
-		firstErr = fmt.Errorf("engine core: error stopping stream: %w", err)
-	} else {
-		log.Println("Engine Core: PortAudio stream stopped.")
+	streamParameters := portaudio.StreamParameters{
+		Input: portaudio.StreamDeviceParameters{
+			Device:   e.inputDevice,
+			Channels: e.config.Audio.InputChannels,
+			Latency:  e.inputLatency,
+		},
+		SampleRate:      e.config.Audio.SampleRate,
+		FramesPerBuffer: e.config.Audio.FramesPerBuffer,
 	}
 
-	log.Println("Engine Core: Closing PortAudio stream...")
-	if err := e.inputStream.Close(); err != nil {
-		log.Printf("Engine Core: Error closing PortAudio stream: %v", err)
-		if firstErr == nil {
-			firstErr = fmt.Errorf("engine core: error closing stream: %w", err)
-		}
-	} else {
-		log.Println("Engine Core: PortAudio stream closed.")
+	applog.Info("Engine Core: Opening PortAudio stream...") // Use Info
+	stream, err := portaudio.OpenStream(streamParameters, e.processInputStream)
+	if err != nil {
+		return fmt.Errorf("engine: failed to open PortAudio stream: %w", err)
+	}
+	e.stream = stream
+
+	applog.Info("Engine Core: Starting PortAudio stream...") // Use Info
+	if err := e.stream.Start(); err != nil {
+		e.stream.Close()
+		e.stream = nil
+		return fmt.Errorf("engine: failed to start PortAudio stream: %w", err)
+	}
+	e.streamActive = true
+	applog.Info("Engine Core: PortAudio stream started successfully.") // Use Info
+
+	if e.udpPublisher != nil {
+		applog.Info("Engine Core: Starting UDP publisher...") // Use Info
+		e.udpPublisher.Start()                                // Start itself logs
 	}
 
-	e.inputStream = nil
-	return firstErr
+	return nil
 }
 
-// Close stops the input stream and potentially cleans up processors.
+// StopInputStream stops and closes the active PortAudio stream.
+func (e *Engine) StopInputStream() error {
+	e.streamMu.Lock()
+	defer e.streamMu.Unlock()
+
+	if !e.streamActive || e.stream == nil {
+		applog.Info("Engine Core: Stream not active or already stopped.") // Use Info
+		return nil
+	}
+
+	applog.Info("Engine Core: Stopping PortAudio stream...") // Use Info
+	if e.udpPublisher != nil {
+		applog.Info("Engine Core: Stopping UDP publisher...") // Use Info
+		if err := e.udpPublisher.Stop(); err != nil {
+			applog.Errorf("Engine Core: Error stopping UDP publisher: %v", err) // Use Errorf
+		}
+	}
+
+	err := e.stream.Stop()
+	if err != nil {
+		applog.Errorf("Engine Core: Error stopping PortAudio stream: %v", err) // Use Errorf
+	} else {
+		applog.Info("Engine Core: PortAudio stream stopped.") // Use Info
+	}
+
+	applog.Info("Engine Core: Closing PortAudio stream...") // Use Info
+	closeErr := e.stream.Close()
+	if closeErr != nil {
+		applog.Errorf("Engine Core: Error closing PortAudio stream: %v", closeErr) // Use Errorf
+		if err == nil {
+			err = closeErr
+		}
+	} else {
+		applog.Info("Engine Core: PortAudio stream closed.") // Use Info
+	}
+
+	e.stream = nil
+	e.streamActive = false
+
+	return err
+}
+
+// Close gracefully shuts down the engine.
 func (e *Engine) Close() error {
-	log.Println("Engine Core: Closing...")
-	streamErr := e.StopInputStream()
+	applog.Info("Engine Core: Closing...") // Use Info
+	var firstErr error
 
-	e.procMutex.RLock()
-	processorsToClose := make([]interface{}, len(e.processors))
-	copy(processorsToClose, e.processors)
-	e.procMutex.RUnlock()
+	applog.Info("Engine Core: Stopping input stream...") // Use Info
+	if err := e.StopInputStream(); err != nil {
+		applog.Errorf("Engine Core: Error during StopInputStream: %v", err) // Use Errorf
+		firstErr = err
+	}
 
-	var firstProcErr error
-	for _, p := range processorsToClose {
-		if closer, ok := p.(interface{ Close() error }); ok {
-			log.Printf("Engine Core: Closing processor %T", p)
-			if err := closer.Close(); err != nil {
-				log.Printf("Engine Core: Error closing processor %T: %v", p, err)
-				if firstProcErr == nil {
-					firstProcErr = err
-				}
+	applog.Infof("Engine Core: Closing %d registered closables...", len(e.closables)) // Use Infof
+	for i := len(e.closables) - 1; i >= 0; i-- {
+		closable := e.closables[i]
+		applog.Debugf("Engine Core: Closing %T...", closable) // Use Debugf
+		if err := closable.Close(); err != nil {
+			applog.Errorf("Engine Core: Error closing %T: %v", closable, err) // Use Errorf
+			if firstErr == nil {
+				firstErr = err
 			}
 		}
 	}
+	applog.Info("Engine Core: Close sequence finished.") // Use Info
 
-	var transportErr error
-	if e.transport != nil {
-		if closer, ok := e.transport.(interface{ Close() error }); ok {
-			log.Println("Engine Core: Closing transport...")
-			if err := closer.Close(); err != nil {
-				log.Printf("Engine Core: Error closing transport: %v", err)
-				transportErr = err
-			}
+	applog.Info("Terminating PortAudio.") // Use Info
+	if err := portaudio.Terminate(); err != nil {
+		applog.Errorf("Engine Core: Error terminating PortAudio: %v", err) // Use Errorf
+		if firstErr == nil {
+			firstErr = err
 		}
+	} else {
+		applog.Info("PortAudio terminated.") // Use Info
 	}
 
-	log.Println("Engine Core: Close sequence finished.")
-	if streamErr != nil {
-		return streamErr
-	}
-	if transportErr != nil {
-		return transportErr
-	}
-	return firstProcErr
+	return firstErr
 }

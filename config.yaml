@@ -4,40 +4,29 @@
 debug: false
 log_level: info
 
-# FFT Analysis settings
-analysis:
-  fft:
-    adaptive: true
-    initial_size: 1024
-    min_size: 256 # Don't go below this
-    max_size: 4096 # Don't go above this
-    size_cooldown_s: 3 # Three seconds between FFT size changes
-    adaptive_period_ms: 500 # Half-second minimum between adaptations
-
-# Duet3 settings
+# Audio settings
 audio:
   use_default_devices: true
-  input_device: 1
+  input_device: 5 # Use default (-1) or specify index
+  output_device: -1 # Use default (-1) or specify index
   sample_rate: 44100
-  frames_per_buffer: 256
-  channels: 2
-  input_channels: 2
+  frames_per_buffer: 256 # Adjust based on performance/latency needs
+  input_channels: 1 # Mono input often sufficient for analysis
   output_channels: 2
+  low_latency: false
+  fft_window: "Hann" # Options: BartlettHann, Blackman, BlackmanNuttall, Hann, Hamming, Lanczos, Nuttall
 
-# Microphone settings
-# audio:
-#   use_default_devices: true
-#   input_device: 0
-#   sample_rate: 44100
-#   frames_per_buffer: 256
-#   channels: 2
-#   input_channels: 1
-#   output_channels: 0
+# Transport settings
+transport:
+  udp_enabled: true
+  udp_target_address: "127.0.0.1:9090" # Target IP and port
+  udp_send_interval: "16.7ms" # Target interval (~60Hz)
 
-# Recording settings
+# Recording settings (Optional)
 recording:
   enabled: false
   output_dir: recordings
   format: wav
   bit_depth: 16
-  silence_threshold: 0.01
+  max_duration_seconds: 0 # 0 for unlimited
+  silence_threshold: 0.01 # Threshold below which audio is considered silent (adjust as needed)

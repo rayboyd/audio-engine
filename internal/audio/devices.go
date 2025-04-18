@@ -123,6 +123,8 @@ func InputDevice(deviceID int) (*portaudio.DeviceInfo, error) {
 	return paDevs[deviceID], nil
 }
 
+// TODO:
+// Document this function.
 func paDevices() ([]*portaudio.DeviceInfo, error) {
 	devices, err := paLibDevicesFunc()
 	if err != nil {
