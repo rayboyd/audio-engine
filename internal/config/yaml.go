@@ -9,6 +9,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// TODO:
+// Document this struct.
 type Config struct {
 	Debug    bool   `yaml:"debug"`
 	LogLevel string `yaml:"log_level"`
@@ -38,11 +40,17 @@ type Config struct {
 	} `yaml:"recording"`
 }
 
+// TODO:
+// Document this function.
 func DefaultConfig() *Config {
 	cfg := &Config{
 		Debug:    false,
 		LogLevel: "info",
 	}
+
+	// TODO:
+	// Do we need this? can it be something else?
+	// idk, but I need to revise how I'm doing defaults.
 
 	cfg.Audio.InputDevice = -1 // default
 	cfg.Audio.OutputDevice = -1
@@ -62,9 +70,13 @@ func DefaultConfig() *Config {
 	return cfg
 }
 
+// TODO:
+// Document this function.
 func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 	if path == "" {
+		// TODO:
+		// A list of OS candidates for config file location.
 		candidates := []string{
 			"config.yaml",
 			// filepath.Join(os.Getenv("HOME"), ".config/config.yaml"),
@@ -83,9 +95,13 @@ func LoadConfig(path string) (*Config, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
+		// TODO:
+		// Preallocate this error message.
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
+		// TODO:
+		// Preallocate this error message.
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
@@ -94,21 +110,35 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// TODO:
+// Document this function.
 func (cfg *Config) SaveConfig(path string) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
+		// Note: SaveConfig marshal error branch is not covered in
+		// test because Config is always marshalable. We could still
+		// trigger this error by modifying the struct to include a
+		// field that is not marshalable.
+		// TODO:
+		// Preallocate this error message.
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		// TODO:
+		// Preallocate this error message.
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
+		// TODO:
+		// Preallocate this error message.
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil
 }
 
+// TODO:
+// Document this function.
 func (cfg *Config) applyEnvOverrides() {
 	if env := os.Getenv("ENV_DEBUG"); env != "" {
 		cfg.Debug = strings.ToLower(env) == "true"

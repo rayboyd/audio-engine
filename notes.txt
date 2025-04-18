@@ -2,6 +2,7 @@
 Checklist
 
 OK - ./pkg/*
+OK - ./audio/config/*
 OK - ./audio/devices|_test
 
 Ideas -

@@ -39,7 +39,7 @@ type FFTWorkspace struct {
 }
 
 // Processor now resides in the analysis package.
-type Processor struct {
+type FFTProcessor struct {
 	fftObj     *fourier.FFT
 	fftSize    int
 	sampleRate float64
@@ -48,7 +48,7 @@ type Processor struct {
 }
 
 // NewFFTProcessor creates a new FFT processor. Renamed for clarity.
-func NewFFTProcessor(fftSize int, sampleRate float64, transport transport.Transport, fn WindowFunc) *Processor {
+func NewFFTProcessor(fftSize int, sampleRate float64, transport transport.Transport, fn WindowFunc) *FFTProcessor {
 	if !bitint.IsPowerOfTwo(fftSize) {
 		log.Panicf("FFT size must be a power of 2, got %d", fftSize)
 	}
@@ -79,7 +79,7 @@ func NewFFTProcessor(fftSize int, sampleRate float64, transport transport.Transp
 
 	log.Printf("Analysis: Initializing FFTProcessor (Size: %d, Window: %T)", fftSize, fn) // Added log
 
-	return &Processor{
+	return &FFTProcessor{
 		fftObj:     fftObj,
 		fftSize:    fftSize,
 		sampleRate: sampleRate,
@@ -94,7 +94,7 @@ func NewFFTProcessor(fftSize int, sampleRate float64, transport transport.Transp
 }
 
 // Process performs FFT analysis.
-func (p *Processor) Process(inputBuffer []int32) {
+func (p *FFTProcessor) Process(inputBuffer []int32) {
 	p.workspace.mu.Lock() // Lock for writing to workspace
 
 	// --- Windowing and Scaling ---
@@ -138,7 +138,7 @@ func (p *Processor) Process(inputBuffer []int32) {
 
 // GetMagnitudes returns a copy of the latest calculated magnitudes.
 // This is needed by other processors like BandEnergyProcessor.
-func (p *Processor) GetMagnitudes() []float64 {
+func (p *FFTProcessor) GetMagnitudes() []float64 {
 	p.workspace.mu.RLock() // Read lock
 	defer p.workspace.mu.RUnlock()
 
@@ -150,7 +150,7 @@ func (p *Processor) GetMagnitudes() []float64 {
 }
 
 // GetFrequencyForBin returns the frequency in Hz for a given FFT bin index.
-func (p *Processor) GetFrequencyForBin(binIndex int) float64 {
+func (p *FFTProcessor) GetFrequencyForBin(binIndex int) float64 {
 	p.workspace.mu.RLock() // Ensure thread safety if called concurrently
 	defer p.workspace.mu.RUnlock()
 

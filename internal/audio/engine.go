@@ -65,11 +65,11 @@ func NewEngine(config *config.Config) (*Engine, error) {
 	// --- Processor Registration ---
 
 	// FFT Processing
-	fftProcessor := analysis.NewAdaptiveFFTProcessor( // NewAdaptiveFFTProcessor
+	fftProcessor := analysis.NewFFTProcessor(
 		engine.config.Audio.FramesPerBuffer,
 		engine.config.Audio.SampleRate,
 		engine.transport,
-		// analysis.BartlettHann,
+		analysis.BartlettHann,
 	)
 	engine.RegisterProcessor(fftProcessor)
 	engine.fftProvider = fftProcessor
@@ -142,8 +142,7 @@ func (e *Engine) processInputStream(in []int32) {
 
 	for _, proc := range processorsToProcess {
 		switch p := proc.(type) {
-		case *analysis.AdaptiveFFTProcessor: // Adaptive FFT Processor concrete type
-		case *analysis.Processor: // FFT Processor concrete type
+		case *analysis.FFTProcessor: // FFT Processor concrete type
 			// Already processed above via e.fftProvider, do nothing here.
 			// log.Println("DEBUG: Skipping FFT in loop") // Add temporary debug log
 		case *analysis.BeatDetector:
@@ -178,15 +177,15 @@ func (e *Engine) StartInputStream() error {
 
 	params := portaudio.StreamParameters{
 		Input: portaudio.StreamDeviceParameters{
-			Channels: e.config.Channels(),
+			Channels: e.config.Audio.InputChannels,
 			Device:   e.inputDevice,
 			Latency:  e.inputLatency,
 		},
 		Output: portaudio.StreamDeviceParameters{
 			Channels: 0, Device: nil,
 		},
-		FramesPerBuffer: e.config.FramesPerBuffer(),
-		SampleRate:      e.config.SampleRate(),
+		FramesPerBuffer: e.config.Audio.FramesPerBuffer,
+		SampleRate:      e.config.Audio.SampleRate,
 	}
 
 	log.Printf("Engine Core: Opening stream with params: %+v", params.Input)
