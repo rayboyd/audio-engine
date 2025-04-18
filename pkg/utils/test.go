@@ -11,11 +11,13 @@ type MockTransport struct {
 func (m *MockTransport) Send(data []float64) error {
 	m.LastData = make([]float64, len(data))
 	copy(m.LastData, data)
+
 	return nil
 }
 
 func GenerateComplexWave(size int, sampleRate float64) []int32 {
 	buffer := make([]int32, size)
+
 	for i := range buffer {
 		tm := float64(i) / sampleRate
 		signal := math.Sin(2*math.Pi*440*tm)*0.5 +
@@ -23,15 +25,18 @@ func GenerateComplexWave(size int, sampleRate float64) []int32 {
 			math.Sin(2*math.Pi*1320*tm)*0.2 // 440Hz fundamental + harmonics
 		buffer[i] = int32(signal * math.MaxInt32 * 0.9)
 	}
+
 	return buffer
 }
 
 func GenerateSineWave(size int, sampleRate, frequency float64) []int32 {
 	buffer := make([]int32, size)
+
 	for i := range buffer {
 		t := float64(i) / sampleRate
 		buffer[i] = int32(math.Sin(2*math.Pi*frequency*t) * math.MaxInt32 * 0.9)
 	}
+
 	return buffer
 }
 

@@ -1,3 +1,11 @@
+
+Checklist
+
+OK - ./pkg/*
+OK - ./audio/devices|_test
+
+Ideas -
+
 1.  **Overall Energy / Loudness:**
     *   **What:** Measures the overall amplitude or power of the signal in a buffer. You're already calculating RMS in the `BeatDetector`.
     *   **Calculation:** RMS (Root Mean Square) for average loudness, Peak Amplitude for maximum instantaneous level.

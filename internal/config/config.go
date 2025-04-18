@@ -105,20 +105,12 @@ func (cfg *Config) SaveConfig(path string) error {
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
+
 	return nil
 }
 
 func (cfg *Config) applyEnvOverrides() {
-	if env := os.Getenv("GREC_DEBUG"); env != "" {
+	if env := os.Getenv("ENV_DEBUG"); env != "" {
 		cfg.Debug = strings.ToLower(env) == "true"
-	}
-	if env := os.Getenv("GREC_LOG_LEVEL"); env != "" {
-		cfg.LogLevel = env
-	}
-	if env := os.Getenv("GREC_COMMAND"); env != "" {
-		cfg.Command = env
-	}
-	if env := os.Getenv("GREC_RECORDING_ENABLED"); env != "" {
-		cfg.Recording.Enabled = strings.ToLower(env) == "true"
 	}
 }
