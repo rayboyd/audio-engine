@@ -15,11 +15,7 @@ import (
 )
 
 func main() {
-	// ------------------------------------------------------------------------
-	// STARTUP (Cold Path)
-	// ------------------------------------------------------------------------
-
-	// --- Initialize PortAudio Early ---
+	// --- Initialize PortAudio ---
 
 	if err := portaudio.Initialize(); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: Failed to initialize PortAudio: %v\n", err)
@@ -92,7 +88,7 @@ func main() {
 		applog.Debugf("Debug mode enabled.")
 	}
 
-	// --- Initialize Audio Engine ---
+	// --- Processing Phase (Hot Path) ---
 
 	applog.Info("Initializing audio engine...")
 	engine, err := audio.NewEngine(cfg)
@@ -101,8 +97,6 @@ func main() {
 	}
 	defer engine.Close()
 
-	// --- Hot Path Initialization ---
-
 	// CRITICAL: Start of real-time audio processing
 	applog.Info("Starting audio stream...")
 	if err := engine.StartInputStream(); err != nil {
@@ -110,8 +104,9 @@ func main() {
 	}
 	applog.Info("Audio stream started. Waiting for interrupt signal (Ctrl+C)...")
 
-	// --- Graceful Shutdown Handling ---
-
+	// Set up signal handling for graceful shutdown, using syscall.SIGINT
+	// and syscall.SIGTERM. This will allow the program to handle Ctrl+C
+	// and other termination signals gracefully.
 	blockUntilSigTerm := make(chan os.Signal, 1)
 	signal.Notify(blockUntilSigTerm, syscall.SIGINT, syscall.SIGTERM)
 
@@ -122,8 +117,8 @@ func main() {
 
 	// --- Shutdown Phase (Cold Path) ---
 
-	// Engine Close is handled by defer.
 	// PortAudio Terminate is handled by defer.
+	// Engine Close is handled by defer.
 }
 
 // listDevices lists audio devices using standard fmt for direct output.

@@ -58,8 +58,6 @@ func HostDevices() ([]Device, error) {
 
 	deviceList := make([]Device, len(paDevs))
 	for i, info := range paDevs {
-		// TODO:
-		// Preallocate this string.
 		hostApiName := "Unknown"
 		if info.HostApi != nil {
 			hostApiName = info.HostApi.Name
