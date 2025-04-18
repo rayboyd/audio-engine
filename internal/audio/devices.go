@@ -29,7 +29,7 @@ type Device struct {
 // Document this function.
 // This should be called ONCE at application startup.
 func Initialize() error {
-	if err := portaudio.Initialize(); err != nil {
+	if err := paLibInitialize(); err != nil {
 		return err
 	}
 	return nil
@@ -39,7 +39,7 @@ func Initialize() error {
 // Document this function.
 // This should be called ONCE at application shutdown.
 func Terminate() error {
-	if err := portaudio.Terminate(); err != nil {
+	if err := paLibTerminate(); err != nil {
 		return err
 	}
 	return nil
@@ -48,7 +48,7 @@ func Terminate() error {
 // TODO:
 // Document this function.
 func HostDevices() ([]Device, error) {
-	paDevs, err := paDevices()
+	paDevs, err := paDevicesFunc()
 	if err != nil {
 		return nil, err
 	}
@@ -91,13 +91,13 @@ func HostDevices() ([]Device, error) {
 // If deviceID is MinDeviceID (-1), returns the system default input device.
 // Returns an error if the device ID is invalid or no such device exists.
 func InputDevice(deviceID int) (*portaudio.DeviceInfo, error) {
-	paDevs, err := paDevices()
+	paDevs, err := paDevicesFunc()
 	if err != nil {
 		return nil, err
 	}
 
 	if deviceID == -1 {
-		defDevice, err := portaudio.DefaultInputDevice()
+		defDevice, err := paLibDefaultInputDeviceFunc()
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +124,7 @@ func InputDevice(deviceID int) (*portaudio.DeviceInfo, error) {
 }
 
 func paDevices() ([]*portaudio.DeviceInfo, error) {
-	devices, err := portaudio.Devices()
+	devices, err := paLibDevicesFunc()
 	if err != nil {
 		// TODO:
 		// This assumes PortAudio is already initialized, should we check
@@ -139,3 +139,11 @@ func paDevices() ([]*portaudio.DeviceInfo, error) {
 
 	return devices, nil
 }
+
+// Mockable functions for testing
+
+var paDevicesFunc = paDevices
+var paLibDevicesFunc = portaudio.Devices
+var paLibDefaultInputDeviceFunc = portaudio.DefaultInputDevice
+var paLibInitialize = portaudio.Initialize
+var paLibTerminate = portaudio.Terminate

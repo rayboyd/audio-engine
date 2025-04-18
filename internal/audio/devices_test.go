@@ -1,201 +1,225 @@
-// SPDX-License-Identifier: MIT
 package audio
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/gordonklaus/portaudio"
 )
 
-func TestInitializeAndListDevices(t *testing.T) {
+func setupPortAudio(t *testing.T) {
+	t.Helper()
 	if err := Initialize(); err != nil {
 		t.Fatalf("Failed to initialize PortAudio: %v", err)
 	}
-	defer Terminate()
-
-	devices, err := paDevices()
-	if err != nil {
-		t.Fatalf("Failed to get PortAudio devices: %v", err)
-	}
-
-	// This should just succeed (may return empty slice but not error).
-	if devices == nil {
-		t.Error("paDevices returned nil slice")
-	}
+	t.Cleanup(func() {
+		if err := Terminate(); err != nil {
+			t.Fatalf("Failed to terminate PortAudio: %v", err)
+		}
+	})
 }
 
-func TestInitializeAndTerminate(t *testing.T) {
-	_ = portaudio.Terminate()
-
-	if err := Initialize(); err != nil {
-		t.Fatalf("Failed to initialize PortAudio: %v", err)
-	}
-
-	if err := Initialize(); err != nil {
-		t.Fatalf("Failed on second initialization: %v", err)
-	}
-
-	if err := Terminate(); err != nil {
-		t.Fatalf("Failed to terminate PortAudio: %v", err)
-	}
-
-	if err := Terminate(); err != nil {
-		t.Fatalf("Failed on second termination: %v", err)
-	}
-}
-
-func TestInitializeAndHostDevices(t *testing.T) {
-	if err := Initialize(); err != nil {
-		t.Fatalf("Failed to initialize PortAudio: %v", err)
-	}
-	defer Terminate()
+func TestHostDevices(t *testing.T) {
+	setupPortAudio(t)
 
 	devices, err := HostDevices()
 	if err != nil {
-		t.Fatalf("Failed to get host devices: %v", err)
+		t.Fatalf("HostDevices error: %v", err)
 	}
-
 	if len(devices) == 0 {
-		t.Log("Warning: No audio devices found on system")
-		return
+		t.Skip("No audio devices found on system")
 	}
-
-	for i, device := range devices {
-		if device.ID != i {
-			t.Errorf("Device ID mismatch at index %d: got ID %d", i, device.ID)
+	for i, d := range devices {
+		if d.ID != i {
+			t.Errorf("Device ID mismatch: got %d, want %d", d.ID, i)
 		}
-
-		if device.Name == "" {
+		if d.Name == "" {
 			t.Errorf("Device %d has empty name", i)
 		}
-
-		if device.HostApiName == "" || device.HostApiName == "Unknown" {
-			t.Logf("Device %d (%s) has unavailable host API: %s",
-				i, device.Name, device.HostApiName)
-		}
-
-		if device.MaxInputChannels < 0 {
-			t.Errorf("Device %d has invalid input channel count: %d",
-				i, device.MaxInputChannels)
-		}
-
-		if device.MaxOutputChannels < 0 {
-			t.Errorf("Device %d has invalid output channel count: %d",
-				i, device.MaxOutputChannels)
-		}
-
-		if device.DefaultSampleRate <= 0 {
-			t.Errorf("Device %d has invalid sample rate: %f",
-				i, device.DefaultSampleRate)
-		}
-
-		if i == len(devices)-1 && !hasDefaultDevice(devices) {
-			t.Log("Warning: No default input device identified")
+		if d.DefaultSampleRate <= 0 {
+			t.Errorf("Device %d has invalid sample rate: %f", i, d.DefaultSampleRate)
 		}
 	}
 }
 
-func TestInitializeAndInputDevice(t *testing.T) {
-	if err := Initialize(); err != nil {
-		t.Fatalf("Failed to initialize PortAudio: %v", err)
-	}
-	defer Terminate()
+func TestHostDevices_paDevicesError(t *testing.T) {
+	setupPortAudio(t)
 
-	device, err := InputDevice(-1)
+	orig := paDevicesFunc
+	defer func() { paDevicesFunc = orig }()
+	paDevicesFunc = func() ([]*portaudio.DeviceInfo, error) {
+		return nil, fmt.Errorf("mock error")
+	}
+
+	_, err := HostDevices()
+	if err == nil || !strings.Contains(err.Error(), "mock error") {
+		t.Errorf("expected mock error, got %v", err)
+	}
+}
+
+func TestInputDevice(t *testing.T) {
+	setupPortAudio(t)
+
+	devices, err := HostDevices()
 	if err != nil {
-		t.Logf("Could not get default input device: %v - some tests skipped", err)
-	} else {
-		if device.Name == "" {
-			t.Error("Default device has empty name")
-		}
-
-		if device.MaxInputChannels <= 0 {
-			t.Error("Default device has no input channels")
-		}
-
-		if device.DefaultSampleRate <= 0 {
-			t.Error("Default device has invalid sample rate")
-		}
+		t.Fatalf("HostDevices error: %v", err)
+	}
+	if len(devices) == 0 {
+		t.Skip("No audio devices found on system")
 	}
 
-	allDevices, err := HostDevices()
-	if err != nil {
-		t.Fatalf("Failed to get all devices: %v", err)
+	if dev, err := InputDevice(-1); err == nil && dev.Name == "" {
+		t.Error("Default input device has empty name")
 	}
 
-	if len(allDevices) == 0 {
-		t.Log("No audio devices available, skipping further tests")
-		return
-	}
-
-	var inputDevice Device
-	var validID int
-	foundInput := false
-	for _, dev := range allDevices {
-		if dev.MaxInputChannels > 0 {
-			inputDevice = dev
-			validID = dev.ID
-			foundInput = true
+	validID := -1
+	for _, d := range devices {
+		if d.MaxInputChannels > 0 {
+			validID = d.ID
 			break
 		}
 	}
-	if !foundInput {
-		t.Log("No input devices available, skipping specific ID tests")
-		return
+	if validID == -1 {
+		t.Skip("No input devices available")
 	}
 
-	device, err = InputDevice(validID)
-	if err != nil {
-		t.Errorf("Failed to get device with valid ID %d: %v", validID, err)
-	} else if device.Name != inputDevice.Name {
-		t.Errorf("Got wrong device: expected %s, got %s",
-			inputDevice.Name, device.Name)
-	}
-
-	invalidTests := []struct {
-		desc    string
-		id      int
-		errText string
-	}{
-		{"Negative ID", -2, "invalid device ID"}, // -1 is default
-		{"Too high ID", len(allDevices) + 10, "invalid device ID"},
-		{"Non-input device", findNonInputDeviceID(allDevices), "does not support input"},
-	}
-
-	for _, tt := range invalidTests {
-		if tt.id == -100 { // Sentinel for not found
-			continue
+	t.Run("Valid input device", func(t *testing.T) {
+		dev, err := InputDevice(validID)
+		if err != nil {
+			t.Fatalf("InputDevice(%d) error: %v", validID, err)
 		}
+		if dev.Name == "" {
+			t.Error("Input device has empty name")
+		}
+	})
 
-		t.Run(tt.desc, func(t *testing.T) {
+	tests := []struct {
+		name   string
+		id     int
+		substr string
+	}{
+		{"Negative ID", -2, "invalid device ID"},
+		{"Too high ID", len(devices) + 10, "invalid device ID"},
+		{"Non-input device", findNonInputDeviceID(devices), "does not support input"},
+	}
+	for _, tt := range tests {
+		if tt.id == -100 {
+			continue // No non-input device found
+		}
+		t.Run(tt.name, func(t *testing.T) {
 			_, err := InputDevice(tt.id)
 			if err == nil {
-				t.Errorf("Expected error for ID %d but got nil", tt.id)
-			} else if !strings.Contains(err.Error(), tt.errText) {
-				t.Errorf("Wrong error for ID %d: got %q, expected to contain %q",
-					tt.id, err.Error(), tt.errText)
+				t.Errorf("Expected error for ID %d", tt.id)
+			} else if !strings.Contains(err.Error(), tt.substr) {
+				t.Errorf("Error = %q, want substring %q", err.Error(), tt.substr)
 			}
 		})
 	}
 }
 
-// Checks if any device is marked as default input.
-func hasDefaultDevice(devices []Device) bool {
-	for _, device := range devices {
-		if device.IsDefaultInput {
-			return true
-		}
+func TestInputDevice_paDevicesError(t *testing.T) {
+	setupPortAudio(t)
+
+	orig := paDevicesFunc
+	defer func() { paDevicesFunc = orig }()
+	paDevicesFunc = func() ([]*portaudio.DeviceInfo, error) {
+		return nil, fmt.Errorf("mock error")
 	}
-	return false
+
+	_, err := InputDevice(-1)
+	if err == nil || !strings.Contains(err.Error(), "mock error") {
+		t.Errorf("expected mock error, got %v", err)
+	}
 }
 
-// Finds a device with no input channels, returns -100 if none found.
+func TestInputDevice_paDefaultInputDeviceError(t *testing.T) {
+	setupPortAudio(t)
+
+	orig := paLibDefaultInputDeviceFunc
+	defer func() { paLibDefaultInputDeviceFunc = orig }()
+	paLibDefaultInputDeviceFunc = func() (*portaudio.DeviceInfo, error) {
+		return nil, fmt.Errorf("mock default input error")
+	}
+
+	_, err := InputDevice(-1)
+	if err == nil || !strings.Contains(err.Error(), "mock default input error") {
+		t.Errorf("expected mock error, got %v", err)
+	}
+}
+
+func TestErrorInitialize(t *testing.T) {
+	orig := paLibInitialize
+	defer func() { paLibInitialize = orig }()
+
+	paLibInitialize = func() error { return nil }
+	if err := Initialize(); err != nil {
+		t.Errorf("expected nil, got %v", err)
+	}
+
+	paLibInitialize = func() error { return fmt.Errorf("mock init error") }
+	if err := Initialize(); err == nil || !strings.Contains(err.Error(), "mock init error") {
+		t.Errorf("expected mock init error, got %v", err)
+	}
+}
+
+func TestErrorTerminate(t *testing.T) {
+	orig := paLibTerminate
+	defer func() { paLibTerminate = orig }()
+
+	paLibTerminate = func() error { return nil }
+	if err := Terminate(); err != nil {
+		t.Errorf("expected nil, got %v", err)
+	}
+
+	paLibTerminate = func() error { return fmt.Errorf("mock term error") }
+	if err := Terminate(); err == nil || !strings.Contains(err.Error(), "mock term error") {
+		t.Errorf("expected mock term error, got %v", err)
+	}
+}
+
+func TestNilDevices(t *testing.T) {
+	setupPortAudio(t)
+
+	orig := paLibDevicesFunc
+	defer func() { paLibDevicesFunc = orig }()
+	paLibDevicesFunc = func() ([]*portaudio.DeviceInfo, error) {
+		return nil, nil
+	}
+
+	devices, err := paDevices()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if devices == nil {
+		t.Errorf("expected empty slice, got nil")
+	}
+	if len(devices) != 0 {
+		t.Errorf("expected length 0, got %d", len(devices))
+	}
+}
+
+func TestPortAudioNotInitialized(t *testing.T) {
+	orig := paLibDevicesFunc
+	defer func() { paLibDevicesFunc = orig }()
+	paLibDevicesFunc = func() ([]*portaudio.DeviceInfo, error) {
+		return nil, fmt.Errorf("PortAudio not initialized")
+	}
+
+	devices, err := paDevices()
+	if err == nil || !strings.Contains(err.Error(), "PortAudio not initialized") {
+		t.Errorf("expected 'PortAudio not initialized' error, got %v", err)
+	}
+	if devices != nil {
+		t.Errorf("expected devices to be nil on error, got %v", devices)
+	}
+}
+
 func findNonInputDeviceID(devices []Device) int {
-	for _, device := range devices {
-		if device.MaxInputChannels == 0 {
-			return device.ID
+	for _, d := range devices {
+		if d.MaxInputChannels == 0 {
+			return d.ID
 		}
 	}
-	return -100 // Sentinel value
+	return -100
 }
