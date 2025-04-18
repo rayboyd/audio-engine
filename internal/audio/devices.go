@@ -8,26 +8,25 @@ import (
 	"github.com/gordonklaus/portaudio"
 )
 
-var SampleRates = []float64{
-	8000, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000,
-}
-
+// TODO:
+// Document this struct.
 type Device struct {
 	ID                       int
 	Name                     string
-	HostApiName              string
-	MaxInputChannels         int
-	MaxOutputChannels        int
 	DefaultSampleRate        float64
 	DefaultLowInputLatency   time.Duration
 	DefaultHighInputLatency  time.Duration
 	DefaultLowOutputLatency  time.Duration
 	DefaultHighOutputLatency time.Duration
+	MaxInputChannels         int
+	MaxOutputChannels        int
+	HostApiName              string
 	IsDefaultInput           bool
 	IsDefaultOutput          bool
 }
 
-// Initialize initializes the PortAudio library.
+// TODO:
+// Document this function.
 // This should be called ONCE at application startup.
 func Initialize() error {
 	if err := portaudio.Initialize(); err != nil {
@@ -36,7 +35,8 @@ func Initialize() error {
 	return nil
 }
 
-// Terminate terminates the PortAudio library.
+// TODO:
+// Document this function.
 // This should be called ONCE at application shutdown.
 func Terminate() error {
 	if err := portaudio.Terminate(); err != nil {
@@ -45,8 +45,8 @@ func Terminate() error {
 	return nil
 }
 
-// HostDevices returns a struct containing information about all available audio
-// devices on the host system. The function initializes PortAudio.
+// TODO:
+// Document this function.
 func HostDevices() ([]Device, error) {
 	paDevs, err := paDevices()
 	if err != nil {
@@ -58,6 +58,8 @@ func HostDevices() ([]Device, error) {
 
 	deviceList := make([]Device, len(paDevs))
 	for i, info := range paDevs {
+		// TODO:
+		// Preallocate this string.
 		hostApiName := "Unknown"
 		if info.HostApi != nil {
 			hostApiName = info.HostApi.Name
@@ -69,14 +71,14 @@ func HostDevices() ([]Device, error) {
 		deviceList[i] = Device{
 			ID:                       i,
 			Name:                     info.Name,
-			HostApiName:              hostApiName,
-			MaxInputChannels:         info.MaxInputChannels,
-			MaxOutputChannels:        info.MaxOutputChannels,
 			DefaultSampleRate:        info.DefaultSampleRate,
 			DefaultLowInputLatency:   info.DefaultLowInputLatency,
 			DefaultHighInputLatency:  info.DefaultHighInputLatency,
 			DefaultLowOutputLatency:  info.DefaultLowOutputLatency,
 			DefaultHighOutputLatency: info.DefaultHighOutputLatency,
+			MaxInputChannels:         info.MaxInputChannels,
+			MaxOutputChannels:        info.MaxOutputChannels,
+			HostApiName:              hostApiName,
 			IsDefaultInput:           isDefaultIn,
 			IsDefaultOutput:          isDefaultOut,
 		}
@@ -103,12 +105,16 @@ func InputDevice(deviceID int) (*portaudio.DeviceInfo, error) {
 	}
 
 	if deviceID < 0 || deviceID >= len(paDevs) {
+		// TODO:
+		// Preallocate this error message.
 		return nil, fmt.Errorf(
 			"invalid device ID: %d (must be between 0 and %d, or %d for default)",
 			deviceID, len(paDevs)-1, -1)
 	}
 
 	if paDevs[deviceID].MaxInputChannels == 0 {
+		// TODO:
+		// Preallocate this error message.
 		return nil, fmt.Errorf(
 			"device ID %d (%s) does not support input",
 			deviceID, paDevs[deviceID].Name)
@@ -117,13 +123,14 @@ func InputDevice(deviceID int) (*portaudio.DeviceInfo, error) {
 	return paDevs[deviceID], nil
 }
 
-// paDevices returns all available PortAudio devices.
-// Assumes PortAudio is already initialized.
 func paDevices() ([]*portaudio.DeviceInfo, error) {
 	devices, err := portaudio.Devices()
 	if err != nil {
-		// Check if the error is "PortAudio not initialized" and return a specific error?
-		return nil, err // PortAudio must be initialized for this to work
+		// TODO:
+		// This assumes PortAudio is already initialized, should we check
+		// if the error is "PortAudio not initialized" and return a specific
+		// error? ... ??? needs tested.
+		return nil, err
 	}
 
 	if devices == nil {

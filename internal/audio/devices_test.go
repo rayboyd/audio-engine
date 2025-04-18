@@ -8,7 +8,24 @@ import (
 	"github.com/gordonklaus/portaudio"
 )
 
-func TestInitializeTerminate(t *testing.T) {
+func TestInitializeAndListDevices(t *testing.T) {
+	if err := Initialize(); err != nil {
+		t.Fatalf("Failed to initialize PortAudio: %v", err)
+	}
+	defer Terminate()
+
+	devices, err := paDevices()
+	if err != nil {
+		t.Fatalf("Failed to get PortAudio devices: %v", err)
+	}
+
+	// This should just succeed (may return empty slice but not error).
+	if devices == nil {
+		t.Error("paDevices returned nil slice")
+	}
+}
+
+func TestInitializeAndTerminate(t *testing.T) {
 	_ = portaudio.Terminate()
 
 	if err := Initialize(); err != nil {
@@ -28,7 +45,12 @@ func TestInitializeTerminate(t *testing.T) {
 	}
 }
 
-func TestHostDevices(t *testing.T) {
+func TestInitializeAndHostDevices(t *testing.T) {
+	if err := Initialize(); err != nil {
+		t.Fatalf("Failed to initialize PortAudio: %v", err)
+	}
+	defer Terminate()
+
 	devices, err := HostDevices()
 	if err != nil {
 		t.Fatalf("Failed to get host devices: %v", err)
@@ -74,7 +96,12 @@ func TestHostDevices(t *testing.T) {
 	}
 }
 
-func TestInputDevice(t *testing.T) {
+func TestInitializeAndInputDevice(t *testing.T) {
+	if err := Initialize(); err != nil {
+		t.Fatalf("Failed to initialize PortAudio: %v", err)
+	}
+	defer Terminate()
+
 	device, err := InputDevice(-1)
 	if err != nil {
 		t.Logf("Could not get default input device: %v - some tests skipped", err)
@@ -153,24 +180,7 @@ func TestInputDevice(t *testing.T) {
 	}
 }
 
-func TestPaDevices(t *testing.T) {
-	if err := Initialize(); err != nil {
-		t.Fatalf("Failed to initialize PortAudio: %v", err)
-	}
-	defer Terminate()
-
-	devices, err := paDevices()
-	if err != nil {
-		t.Fatalf("Failed to get PortAudio devices: %v", err)
-	}
-
-	// This should just succeed (may return empty slice but not error).
-	if devices == nil {
-		t.Error("paDevices returned nil slice")
-	}
-}
-
-// hasDefaultDevice checks if any device is marked as default input.
+// Checks if any device is marked as default input.
 func hasDefaultDevice(devices []Device) bool {
 	for _, device := range devices {
 		if device.IsDefaultInput {
@@ -180,8 +190,7 @@ func hasDefaultDevice(devices []Device) bool {
 	return false
 }
 
-// findNonInputDeviceID finds a device with no input channels,
-// Will return -100 if none found.
+// Finds a device with no input channels, returns -100 if none found.
 func findNonInputDeviceID(devices []Device) int {
 	for _, device := range devices {
 		if device.MaxInputChannels == 0 {

@@ -56,19 +56,23 @@ func main() {
 		}
 	}()
 
-	// Parse command line arguments and build configuration
+	// Parse flags
 	configPath := flag.String("config", "", "Path to config file")
-	listDevices := flag.Bool("list", false, "List available audio devices and exit")
+	debug := flag.Bool("debug", false, "Enable debug mode")
 	flag.Parse()
 
-	// Handle the list flag as a special case for backwards compatibility
-	if *listDevices {
-		config := config.DefaultConfig()
-		config.Command = "list"
-		if err := executeCommand(config); err != nil {
-			log.Fatalf("FATAL: Failed to execute command 'list' %v", err)
+	// Handle subcommands
+	if len(flag.Args()) > 0 {
+		switch flag.Args()[0] {
+		case "list":
+			if err := listDevices(); err != nil {
+				log.Fatal(err)
+			}
+			return
+		case "version":
+			fmt.Println("Audio Engine version 1.0.0")
+			return
 		}
-		return
 	}
 
 	// Load configuration from file
@@ -78,7 +82,7 @@ func main() {
 	}
 
 	// Debug mode setup
-	if config.Debug {
+	if config.Debug || *debug {
 		log.Println("Debug mode enabled.")
 	}
 
@@ -117,31 +121,14 @@ func main() {
 	log.Println("Grec V2 finished.")
 }
 
-// executeCommand handles one-off commands that don't require the audio engine
-// to be running, such as listing available audio devices.
-func executeCommand(cfg *config.Config) error {
-	switch cfg.Command {
-	case "list":
-		devices, err := audio.HostDevices() // Assumes PortAudio is initialized
-		if err != nil {
-			return fmt.Errorf("failed to list devices: %w", err)
-		}
-
-		if len(devices) == 0 {
-			fmt.Println("No audio devices found.")
-			return nil
-		}
-
-		fmt.Printf("\nAvailable Audio Devices (%d found)\n\n", len(devices))
-
-		// Loop through devices and call the print helper
-		for _, device := range devices {
-			printDeviceDetails(device)
-		}
-
-	// TODO: Add other cases for commands like 'version', 'help' if needed
-	default:
-		return fmt.Errorf("unknown command: %s", cfg.Command)
+// listDevices lists audio devices
+func listDevices() error {
+	devices, err := audio.HostDevices()
+	if err != nil {
+		return err
+	}
+	for _, d := range devices {
+		printDeviceDetails(d)
 	}
 	return nil
 }

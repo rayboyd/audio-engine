@@ -557,7 +557,7 @@
         }
 
         function initParticles(width, height) {
-            const particleCount = 200;
+            const particleCount = 2000;
             particles = [];
 
             for (let i = 0; i < particleCount; i++) {
@@ -603,7 +603,7 @@
                 }
 
                 // Grow particles based on energy
-                p.size = Math.max(1, p.size + (energy * 0.1) - 0.05);
+                p.size = Math.max(1, p.size + (energy * 0.1) - 0.05) * 0.1;
             }
         }
 
