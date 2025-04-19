@@ -1,10 +1,3 @@
-
-Checklist
-
-OK - ./pkg/*
-OK - ./audio/config/*
-OK - ./audio/devices|_test
-
 Ideas -
 
 1.  **Overall Energy / Loudness:**
@@ -45,7 +38,7 @@ Ideas -
         *   Similar to transients, can drive the intensity or frequency of flashes, pulses, or other reactive elements.
         *   Send as: `{"type": "flux", "value": 0.85}`.
 
-6.  **Key Detection (as you mentioned):**
+6.  **Key Detection:**
     *   **What:** Estimates the musical key (e.g., C Major, A minor) of the audio.
     *   **Calculation:** More complex, typically involves calculating a Chromagram (energy per pitch class) and matching it against predefined key profiles. Libraries like Aubio often have functions for this.
     *   **Use/Visualization:**
