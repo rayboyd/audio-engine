@@ -2,9 +2,7 @@
 package config
 
 import (
-	applog "audio/internal/log"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
@@ -24,15 +22,14 @@ type Config struct {
 
 // AudioConfig holds settings related to audio input/output and processing.
 type AudioConfig struct {
-	InputDevice       int     `yaml:"input_device"`        // PortAudio device index for audio input (-1 for default).
-	OutputDevice      int     `yaml:"output_device"`       // PortAudio device index for audio output (-1 for default, currently unused).
-	SampleRate        float64 `yaml:"sample_rate"`         // Sample rate in Hz (e.g., 44100, 48000).
-	FramesPerBuffer   int     `yaml:"frames_per_buffer"`   // Number of audio frames per processing buffer (affects latency and FFT resolution).
-	LowLatency        bool    `yaml:"low_latency"`         // Request low latency settings from PortAudio device.
-	InputChannels     int     `yaml:"input_channels"`      // Number of input channels to capture (e.g., 1 for mono, 2 for stereo).
-	OutputChannels    int     `yaml:"output_channels"`     // Number of output channels (currently unused).
-	UseDefaultDevices bool    `yaml:"use_default_devices"` // If true, ignores InputDevice/OutputDevice and uses PortAudio defaults.
-	FFTWindow         string  `yaml:"fft_window"`          // Name of the window function for FFT analysis (e.g., "Hann", "Hamming").
+	InputDevice     int     `yaml:"input_device"`      // PortAudio device index for audio input (-1 for default).
+	OutputDevice    int     `yaml:"output_device"`     // PortAudio device index for audio output (-1 for default, currently unused).
+	SampleRate      float64 `yaml:"sample_rate"`       // Sample rate in Hz (e.g., 44100, 48000).
+	FramesPerBuffer int     `yaml:"frames_per_buffer"` // Number of audio frames per processing buffer (affects latency and FFT resolution).
+	LowLatency      bool    `yaml:"low_latency"`       // Request low latency settings from PortAudio device.
+	InputChannels   int     `yaml:"input_channels"`    // Number of input channels to capture (e.g., 1 for mono, 2 for stereo).
+	OutputChannels  int     `yaml:"output_channels"`   // Number of output channels (currently unused).
+	FFTWindow       string  `yaml:"fft_window"`        // Name of the window function for FFT analysis (e.g., "Hann", "Hamming").
 }
 
 // RecordingConfig holds settings related to audio recording functionality.
@@ -52,38 +49,36 @@ type TransportConfig struct {
 	UDPSendInterval  time.Duration `yaml:"udp_send_interval"`  // Interval between sending UDP packets.
 }
 
-// LoadConfig loads configuration from a YAML file specified by path.
-// If path is empty, it searches default locations ("config.yaml").
-// If no file is found, it uses built-in defaults.
-// After loading defaults or from file, it applies environment variable overrides
-// and validates the final configuration.
+// LoadConfig loads configuration from a YAML file specified by path. If path is empty,
+// it searches default locations ("config.yaml"). If no file is found, it uses built-in
+// defaults.  After loading defaults or from file, it applies environment variable
+// overrides and validates the final configuration.
 func LoadConfig(path string) (*Config, error) {
 	cfg := Config{
 		Debug:    false,
 		LogLevel: "info",
 		Audio: AudioConfig{
-			InputDevice:       -1, // default
-			OutputDevice:      -1,
-			SampleRate:        44100,
-			FramesPerBuffer:   1024,
-			LowLatency:        false,
-			InputChannels:     2,
-			OutputChannels:    2,
-			UseDefaultDevices: true,
-			FFTWindow:         "Hann",
+			InputDevice:     -1, // -1 for default device.
+			OutputDevice:    -1,
+			SampleRate:      44100,
+			FramesPerBuffer: 1024,
+			LowLatency:      false,
+			InputChannels:   2,
+			OutputChannels:  2,
+			FFTWindow:       "Hann",
 		},
 		Recording: RecordingConfig{
 			Enabled:     false,
 			OutputDir:   "./recordings",
 			Format:      "wav",
 			BitDepth:    16,
-			MaxDuration: 0, // unlimited
+			MaxDuration: 0, // 0 for unlimited.
 			SilenceTh:   0.01,
 		},
 		Transport: TransportConfig{
-			UDPEnabled:       false, // Default UDP to false
+			UDPEnabled:       false, // Default UDP to false.
 			UDPTargetAddress: "127.0.0.1:9090",
-			UDPSendInterval:  33 * time.Millisecond, // Default ~30Hz
+			UDPSendInterval:  33 * time.Millisecond, // Default ~30Hz.
 		},
 	}
 
@@ -100,16 +95,14 @@ func LoadConfig(path string) (*Config, error) {
 			if _, err := os.Stat(candidate); err == nil {
 				path = candidate
 				found = true
-				applog.Debugf("Config: Found configuration file at '%s'", path)
 				break
 			}
 		}
 		if !found {
-			// Loads the default config file if no path is provided and no config file
-			// is found, apply environment overrides, and validate the config.
 			cfg.applyEnvOverrides()
 			if err := cfg.Validate(); err != nil {
-				applog.Errorf("Config: Invalid default configuration after environment overrides: %v", err)
+				// TODO:
+				// Preallocate this error message.
 				return nil, fmt.Errorf("invalid default configuration: %w", err)
 			}
 			return &cfg, nil
@@ -128,9 +121,12 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
+	// Apply environment variable overrides AFTER loading from file.
 	cfg.applyEnvOverrides()
 
 	if err := cfg.Validate(); err != nil {
+		// TODO:
+		// Preallocate this error message.
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
@@ -138,8 +134,6 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	// ... existing audio/recording validation ...
-
 	// Transport Validation
 	// if c.Transport.UDPEnabled {
 	// 	if c.Transport.UDPTargetAddress == "" {
@@ -166,7 +160,7 @@ func (cfg *Config) applyEnvOverrides() {
 	if val, ok := os.LookupEnv("ENV_DEBUG"); ok {
 		if bVal, err := strconv.ParseBool(val); err == nil {
 			cfg.Debug = bVal
-			log.Printf("Config: Overriding debug from env: %v", bVal)
+			fmt.Printf("configuration: Overriding debug from env: %v", bVal)
 		}
 	}
 
@@ -177,19 +171,19 @@ func (cfg *Config) applyEnvOverrides() {
 	if val, ok := os.LookupEnv("ENV_UDP_ENABLED"); ok {
 		if bVal, err := strconv.ParseBool(val); err == nil {
 			cfg.Transport.UDPEnabled = bVal
-			log.Printf("Config: Overriding transport.udp_enabled from env: %v", bVal)
+			fmt.Printf("configuration: Overriding transport.udp_enabled from env: %v", bVal)
 		}
 	}
 	// ENV_UDP_TARGET_ADDRESS
 	if val, ok := os.LookupEnv("ENV_UDP_TARGET_ADDRESS"); ok {
 		cfg.Transport.UDPTargetAddress = val
-		log.Printf("Config: Overriding transport.udp_target_address from env: %s", val)
+		fmt.Printf("configuration: Overriding transport.udp_target_address from env: %s", val)
 	}
 	// ENV_UDP_SEND_INTERVAL
 	if val, ok := os.LookupEnv("ENV_UDP_SEND_INTERVAL"); ok {
 		if dur, err := time.ParseDuration(val); err == nil {
 			cfg.Transport.UDPSendInterval = dur
-			log.Printf("Config: Overriding transport.udp_send_interval from env: %s", dur)
+			fmt.Printf("configuration: Overriding transport.udp_send_interval from env: %s", dur)
 		}
 	}
 }

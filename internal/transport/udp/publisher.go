@@ -3,7 +3,6 @@ package udp
 
 import (
 	"audio/internal/analysis"
-	applog "audio/internal/log"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -46,12 +45,12 @@ func NewUDPPublisher(interval time.Duration, sender *UDPSender, fftProc *analysi
 
 	if interval <= 0 {
 		interval = 16 * time.Millisecond // Default to ~60Hz if invalid
-		applog.Warnf("UDPPublisher: Invalid interval provided, defaulting to %s", interval)
+		fmt.Printf("UDPPublisher: Invalid interval provided, defaulting to %s\n", interval)
 	}
 
 	// Determine required buffer size based on FFT size (N/2 + 1 bins)
 	requiredLen := fftProc.GetFFTSize()/2 + 1
-	applog.Infof("UDPPublisher: Initializing (Interval: %s, FFT Bins: %d)", interval, requiredLen)
+	fmt.Printf("UDPPublisher: Initializing (Interval: %s, FFT Bins: %d)\n", interval, requiredLen)
 
 	return &UDPPublisher{
 		sender:       sender,
@@ -74,7 +73,7 @@ func (p *UDPPublisher) Start() {
 	// Prevent starting if already running
 	if p.ticker != nil {
 		p.mu.Unlock()
-		applog.Warnf("UDPPublisher: Start called but already running.")
+		fmt.Printf("UDPPublisher: Start called but already running.\n")
 		return
 	}
 
@@ -92,7 +91,7 @@ func (p *UDPPublisher) Start() {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		applog.Infof("UDPPublisher: Publisher goroutine started (Interval: %s)", p.interval)
+		fmt.Printf("UDPPublisher: Publisher goroutine started (Interval: %s)\n", p.interval)
 		for {
 			select {
 			case <-ticker.C:
@@ -100,7 +99,7 @@ func (p *UDPPublisher) Start() {
 				p.buildAndSendPacket()
 			case <-doneChan:
 				// Stop signal received
-				applog.Infof("UDPPublisher: Publisher goroutine received stop signal.")
+				fmt.Printf("UDPPublisher: Publisher goroutine received stop signal.\n")
 				return
 			}
 		}
@@ -115,13 +114,13 @@ func (p *UDPPublisher) Stop() error {
 	// Check if already stopped or never started
 	if p.ticker == nil {
 		p.mu.Unlock()
-		applog.Debugf("UDPPublisher: Stop called but not running.")
+		fmt.Printf("UDPPublisher: Stop called but not running.\n")
 		return nil
 	}
 
 	// Use sync.Once to ensure stop logic (closing channel, stopping ticker) runs only once
 	p.stopOnce.Do(func() {
-		applog.Infof("UDPPublisher: Initiating stop sequence...")
+		fmt.Printf("UDPPublisher: Initiating stop sequence ...\n")
 		close(p.doneChan) // Signal the goroutine to exit
 		p.ticker.Stop()   // Stop the ticker
 		p.ticker = nil    // Mark as stopped
@@ -130,9 +129,9 @@ func (p *UDPPublisher) Stop() error {
 	p.mu.Unlock() // Unlock before waiting
 
 	// Wait for the publisher goroutine to finish processing the stop signal
-	applog.Debugf("UDPPublisher: Waiting for publisher goroutine to finish...")
+	fmt.Printf("UDPPublisher: Waiting for publisher goroutine to finish ...\n")
 	p.wg.Wait()
-	applog.Infof("UDPPublisher: Publisher goroutine finished.")
+	fmt.Printf("UDPPublisher: Publisher goroutine finished.\n")
 	return nil
 }
 
@@ -170,7 +169,7 @@ func (p *UDPPublisher) buildAndSendPacket() {
 	// Use GetMagnitudesInto to avoid allocations within the FFT processor.
 	err := p.fftProc.GetMagnitudesInto(p.udpMagBuffer)
 	if err != nil {
-		applog.Errorf("UDPPublisher: Error getting magnitudes: %v", err)
+		//fmt.Errorf("UDPPublisher: Error getting magnitudes: %v", err)
 		return // Skip sending this packet
 	}
 
@@ -178,7 +177,8 @@ func (p *UDPPublisher) buildAndSendPacket() {
 
 	// Ensure the float32 buffer matches the expected length (should always match if initialized correctly).
 	if len(p.udpF32Buffer) != len(p.udpMagBuffer) {
-		applog.Errorf("UDPPublisher: Mismatched internal buffer lengths (%d != %d)! Resizing f32 buffer.",
+		// Refactor
+		fmt.Printf("UDPPublisher: Mismatched internal buffer lengths (%d != %d)! Resizing f32 buffer.\n",
 			len(p.udpF32Buffer), len(p.udpMagBuffer))
 		// Attempt to recover by resizing, although this indicates an initialization issue.
 		p.udpF32Buffer = make([]float32, len(p.udpMagBuffer))
@@ -214,7 +214,7 @@ func (p *UDPPublisher) buildAndSendPacket() {
 	}
 
 	if err != nil {
-		applog.Errorf("UDPPublisher: Error packing data into binary buffer: %v", err)
+		// fmt.Errorf("UDPPublisher: Error packing data into binary buffer: %v", err)
 		return // Skip sending this packet
 	}
 
@@ -228,16 +228,16 @@ func (p *UDPPublisher) buildAndSendPacket() {
 	if err != nil {
 		// Error logging is handled within sender.Send based on its debug flag.
 		// No need to log the same error again here unless more context is needed.
-		// applog.Errorf("UDPPublisher: Error sending packet %d: %v", p.sequenceNum, err)
+		// fmt.Errorf("UDPPublisher: Error sending packet %d: %v", p.sequenceNum, err)
 	} else {
 		// Log successful sends only at Debug level to avoid flooding logs.
-		applog.Debugf("UDPPublisher: Sent packet %d (%d bytes)", p.sequenceNum, len(packetBytes))
+		fmt.Printf("UDPPublisher: Sent packet %d (%d bytes)\n", p.sequenceNum, len(packetBytes))
 	}
 }
 
 // Close implements the io.Closer interface. It gracefully stops the publisher goroutine.
 func (p *UDPPublisher) Close() error {
-	applog.Debugf("UDPPublisher: Close called, stopping publisher...")
+	fmt.Printf("UDPPublisher: Close called, stopping publisher...\n")
 	return p.Stop()
 }
 

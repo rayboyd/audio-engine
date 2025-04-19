@@ -16,7 +16,6 @@ import (
 // WindowFunc defines the type for selecting an FFT window function.
 type WindowFunc int
 
-// Enum for available window functions.
 const (
 	BartlettHann WindowFunc = iota
 	Blackman

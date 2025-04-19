@@ -1,32 +1,27 @@
-# Grec V2 Configuration
+# Phase4 Configuration
 
-# General settings
 debug: false
 log_level: info
 
-# Audio settings
 audio:
-  use_default_devices: true
-  input_device: 6 # Use default (-1) or specify index
-  output_device: -1 # Use default (-1) or specify index
+  input_device: 6
+  output_device: -1
   sample_rate: 44100
-  frames_per_buffer: 256 # Adjust based on performance/latency needs
-  input_channels: 1 # Mono input often sufficient for analysis
-  output_channels: 2
+  frames_per_buffer: 256
+  input_channels: 1 # MOVE: Mono input is sufficient for analysis, but need option for recording
+  output_channels: 2 # Unused but sensible to leave in
   low_latency: false
   fft_window: "Hann" # Options: BartlettHann, Blackman, BlackmanNuttall, Hann, Hamming, Lanczos, Nuttall
 
-# Transport settings
 transport:
   udp_enabled: true
   udp_target_address: "127.0.0.1:9090" # Target IP and port
-  udp_send_interval: "16.7ms" # Target interval (~60Hz)
+  udp_send_interval: "16.7ms" # Target interval (~60Hz, think FPS not Sample Rate)
 
-# Recording settings (Optional)
 recording:
   enabled: false
-  output_dir: recordings
+  output_dir: "./recordings"
   format: wav
   bit_depth: 16
-  max_duration_seconds: 0 # 0 for unlimited
-  silence_threshold: 0.01 # Threshold below which audio is considered silent (adjust as needed)
+  max_duration_seconds: 0 # 0 for no limit
+  silence_threshold: 0.01

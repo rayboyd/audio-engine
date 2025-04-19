@@ -2,7 +2,6 @@
 package udp
 
 import (
-	applog "audio/internal/log"
 	"errors"
 	"fmt"
 	"net"
@@ -32,7 +31,6 @@ type UDPSender struct {
 func NewUDPSender(targetAddress string, debug bool) (*UDPSender, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", targetAddress)
 	if err != nil {
-		applog.Errorf("UDP Sender: Failed to resolve target address '%s': %v", targetAddress, err)
 		return nil, fmt.Errorf("failed to resolve UDP target address '%s': %w", targetAddress, err)
 	}
 
@@ -42,10 +40,9 @@ func NewUDPSender(targetAddress string, debug bool) (*UDPSender, error) {
 	// like "connection refused" (though this behavior can vary by OS).
 	conn, err := net.DialUDP("udp", nil, udpAddr)
 	if err != nil {
-		applog.Errorf("UDP Sender: Failed to dial UDP for target '%s': %v", targetAddress, err)
 		return nil, fmt.Errorf("failed to dial UDP for target '%s': %w", targetAddress, err)
 	}
-	applog.Infof("UDP Sender: Connection established to %s (Debug logging: %v)", conn.RemoteAddr().String(), debug)
+	fmt.Printf("UDP Sender: Connection established to %s (Debug logging: %v)\n", conn.RemoteAddr().String(), debug)
 
 	return &UDPSender{
 		conn:       conn,
@@ -96,12 +93,12 @@ func (s *UDPSender) Send(data []byte) error {
 		if isConnRefused {
 			// Only log "connection refused" if debug mode is enabled.
 			if s.debug {
-				applog.Debugf("UDP Sender: Send error (connection refused): %v", err)
+				fmt.Printf("UDP Sender: Send error (connection refused): %v\n", err)
 			}
 			// If not debugging, suppress this specific error to avoid log noise.
 		} else {
 			// Log all other types of send errors at the Error level.
-			applog.Errorf("UDP Sender: Send error: %v", err)
+			return fmt.Errorf("UDP Sender: Send error: %v", err)
 		}
 		// Wrap the original error and return it to the caller.
 		return fmt.Errorf("failed to send UDP packet: %w", err)
@@ -120,7 +117,7 @@ func (s *UDPSender) Close() error {
 
 	// Check if already closed to prevent redundant closing operations.
 	if s.closed {
-		applog.Debugf("UDP Sender: Close called but already closed.")
+		fmt.Printf("UDP Sender: Close called but already closed.\n")
 		return nil
 	}
 
@@ -129,15 +126,13 @@ func (s *UDPSender) Close() error {
 
 	// Check if the connection exists before trying to close it.
 	if s.conn != nil {
-		applog.Infof("UDP Sender: Closing connection to %s", s.conn.RemoteAddr().String())
+		fmt.Printf("UDP Sender: Closing connection to %s\n", s.conn.RemoteAddr().String())
 		// Close the UDP socket.
 		err := s.conn.Close()
 		s.conn = nil // Set to nil after closing to prevent further use.
 
 		// Handle potential errors during the close operation.
 		if err != nil {
-			applog.Errorf("UDP Sender: Error closing connection: %v", err)
-			// Wrap the error and return it.
 			return fmt.Errorf("failed to close UDP connection: %w", err)
 		}
 		// Close successful.
@@ -145,7 +140,7 @@ func (s *UDPSender) Close() error {
 	}
 
 	// Connection was already nil (shouldn't happen in normal flow but handle defensively).
-	applog.Warnf("UDP Sender: Close called but connection was already nil.")
+	fmt.Printf("UDP Sender: Close called but connection was already nil.\n")
 	return nil
 }
 

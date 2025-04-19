@@ -4,7 +4,6 @@ package main
 import (
 	"audio/internal/audio"
 	"audio/internal/config"
-	applog "audio/internal/log"
 	"flag"
 	"fmt"
 	"os"
@@ -15,167 +14,99 @@ import (
 )
 
 func main() {
-	// --- 1. Initialize PortAudio ---
-
+	/*
+		---------------------------------------------------------------------------------
+		Initialize PortAudio
+		---------------------------------------------------------------------------------
+	*/
 	if err := portaudio.Initialize(); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: Failed to initialize PortAudio: %v\n", err)
 		os.Exit(1)
 	}
 	defer func() {
-		fmt.Println("Terminating PortAudio.")
+		fmt.Printf("main: Terminating PortAudio ...\n")
 		if err := portaudio.Terminate(); err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: Failed to terminate PortAudio cleanly: %v\n", err)
 		} else {
-			fmt.Println("PortAudio terminated.")
+			fmt.Printf("main: PortAudio terminated.\n")
 		}
 	}()
 
-	// --- 2. Parse Flags ---
-
+	/*
+		---------------------------------------------------------------------------------
+		Parse flags
+		- Handle one-off commands (e.g., list devices)
+		---------------------------------------------------------------------------------
+	*/
 	configPath := flag.String("config", "", "Path to config file")
 	flag.Parse()
-
-	// --- 3. Handle One-Off Commands ---
 
 	if len(flag.Args()) > 0 {
 		switch flag.Args()[0] {
 		case "list":
-			if err := listDevices(); err != nil {
+			if err := audio.ListDevices(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error listing devices: %v\n", err)
 				os.Exit(1)
 			}
 			return
-		case "version":
-			fmt.Println("Audio Engine version 1.0.0")
-			return
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", flag.Args()[0])
-			fmt.Println("Available commands: list, version")
 			os.Exit(1)
 		}
 	}
 
-	// --- 4. Load Configuration ---
-
+	/*
+		---------------------------------------------------------------------------------
+		Load Configuration
+		---------------------------------------------------------------------------------
+	*/
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: Failed to load configuration: %v\n", err)
 		os.Exit(1)
 	}
 
-	// --- 5. Setup Logging ---
+	fmt.Printf("main: Configuration loaded successfully\n")
+	fmt.Printf("main: Debug mode is %v\n", cfg.Debug)
 
-	logLevel, ok := applog.ParseLevel(cfg.LogLevel)
-	if !ok {
-		fmt.Fprintf(os.Stderr, "WARN: Invalid log_level '%s' in config, using INFO\n", cfg.LogLevel)
-		logLevel = applog.LevelInfo
-	}
-
-	// Override log level if debug flag is explicitly set via command line.
-	if debugFlag := flag.Lookup("debug"); debugFlag != nil && debugFlag.Value.String() == "true" {
-		cfg.Debug = true
-		logLevel = applog.LevelDebug
-		fmt.Println("INFO: Debug mode enabled via command line flag, setting log level to DEBUG.")
-	} else if cfg.Debug {
-		// If debug is set in config but not overridden by flag, ensure level is Debug.
-		logLevel = applog.LevelDebug
-	}
-	applog.SetLevel(logLevel)
-
-	// The applog is ready to use!
-	applog.Infof("Configuration loaded successfully. Log level set to %s.", logLevel)
-	if cfg.Debug {
-		applog.Debugf("Debug mode enabled.")
-	}
-
-	// --- 6. Processing Phase (Hot Path) ---
-
-	applog.Info("Initializing audio engine...")
+	/*
+		---------------------------------------------------------------------------------
+		Startup
+		- Audio Engine
+		- Stream (I/O Hot Path)
+		- Wait ... (for interrupt signal)
+		---------------------------------------------------------------------------------
+	*/
+	fmt.Printf("main: Initializing the Audio Engine ...\n")
 	engine, err := audio.NewEngine(cfg)
 	if err != nil {
-		applog.Fatalf("Failed to initialize audio engine: %v", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Failed to initialize audio engine: %v\n", err)
+		os.Exit(1)
 	}
 	defer engine.Close()
 
-	// CRITICAL: Start of real-time audio processing
-	applog.Info("Starting audio stream...")
+	// CRITICAL: Start of real-time audio processing (Hot Path)
+	fmt.Printf("main: Starting audio stream ...\n")
 	if err := engine.StartInputStream(); err != nil {
-		applog.Fatalf("Failed to start audio stream: %v", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Failed to start audio stream: %v\n", err)
+		os.Exit(1)
 	}
-	applog.Info("Audio stream started. Waiting for interrupt signal (Ctrl+C)...")
+	fmt.Printf("main: Audio stream started. Waiting for interrupt signal (Ctrl+C) ...\n")
 
-	// Set up signal handling for graceful shutdown, using syscall.SIGINT
-	// and syscall.SIGTERM. This will allow the program to handle Ctrl+C
-	// and other termination signals gracefully.
-	blockUntilSigTerm := make(chan os.Signal, 1)
-	signal.Notify(blockUntilSigTerm, syscall.SIGINT, syscall.SIGTERM)
+	// Set up signal handling for graceful shutdown, using syscall.SIGINT  and syscall.SIGTERM.
+	// This will allow the program to handle Ctrl+C and other termination signals gracefully.
+	sigterm := make(chan os.Signal, 1)
+	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
 
 	// CRITICAL: This will block until a signal is received.
-	<-blockUntilSigTerm
-	applog.Info("")
-	applog.Info("Shutdown signal received, stopping engine...")
+	<-sigterm
 
-	// --- 7. Shutdown Phase (Cold Path) ---
-
-	// PortAudio Terminate is handled by defer.
-	// Engine Close is handled by defer.
-}
-
-// listDevices lists audio devices using standard fmt for direct output.
-func listDevices() error {
-	devices, err := audio.HostDevices()
-	if err != nil {
-		return fmt.Errorf("failed to get host devices: %w", err)
-	}
-	if len(devices) == 0 {
-		fmt.Println("No audio devices found.")
-		return nil
-	}
-	fmt.Println("Available Audio Devices:")
-	fmt.Println("------------------------")
-	for _, d := range devices {
-		printDeviceDetails(d)
-	}
-	fmt.Println("------------------------")
-	return nil
-}
-
-// printDeviceDetails formats and prints information about a single audio device using standard fmt.
-func printDeviceDetails(device audio.Device) {
-	deviceType := "Unknown"
-	if device.MaxInputChannels > 0 && device.MaxOutputChannels > 0 {
-		deviceType = "Input/Output"
-	} else if device.MaxInputChannels > 0 {
-		deviceType = "Input"
-	} else if device.MaxOutputChannels > 0 {
-		deviceType = "Output"
-	}
-
-	defaultMarker := ""
-	if device.IsDefaultInput && device.IsDefaultOutput {
-		defaultMarker = " (Default Input & Output)"
-	} else if device.IsDefaultInput {
-		defaultMarker = " (Default Input)"
-	} else if device.IsDefaultOutput {
-		defaultMarker = " (Default Output)"
-	}
-
-	// Print basic info
-	fmt.Printf("[%d] %s%s\n", device.ID, device.Name, defaultMarker)
-	fmt.Printf("    Type: %s, Host API: %s\n", deviceType, device.HostApiName)
-	fmt.Printf("    Channels: Input=%d, Output=%d\n", device.MaxInputChannels, device.MaxOutputChannels)
-	fmt.Printf("    Default Sample Rate: %.0f Hz\n", device.DefaultSampleRate)
-
-	// Print latency info if applicable
-	if device.MaxInputChannels > 0 {
-		fmt.Printf("    Default Input Latency: Low=%.2fms, High=%.2fms\n",
-			device.DefaultLowInputLatency.Seconds()*1000,
-			device.DefaultHighInputLatency.Seconds()*1000)
-	}
-	if device.MaxOutputChannels > 0 {
-		fmt.Printf("    Default Output Latency: Low=%.2fms, High=%.2fms\n",
-			device.DefaultLowOutputLatency.Seconds()*1000,
-			device.DefaultHighOutputLatency.Seconds()*1000)
-	}
-	fmt.Println()
+	/*
+		---------------------------------------------------------------------------------
+		Shutdown
+		- PortAudio Terminate is handled by defer
+		- Engine Close is handled by defer
+		---------------------------------------------------------------------------------
+	*/
+	fmt.Printf("\nmain: Shutdown signal received ...\n")
 }
