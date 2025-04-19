@@ -1,26 +1,46 @@
 // SPDX-License-Identifier: MIT
 package analysis
 
-// Defines the standard interface for components that process audio buffers.
+// AudioProcessor defines the standard interface for components that process audio buffers.
+// Implementations are expected to analyze or transform the provided audio data.
 type AudioProcessor interface {
-	// Process analyzes the given audio input buffer. Implementations should be efficient as
-	// this is often called from within a hotpath such as the real-time audio callback.
+	// Process analyzes or transforms the given audio input buffer.
+	// Implementations should be efficient and avoid blocking operations, as
+	// this method is often called from within a real-time audio callback (hot path).
 	Process(inputBuffer []int32)
 }
 
-// ClosableProcessor combines AudioProcessor with a Close method for resource cleanup.
+// ClosableProcessor extends the AudioProcessor interface with a Close method.
+// This allows processors that allocate resources (e.g., buffers, goroutines)
+// to release them gracefully.
 type ClosableProcessor interface {
 	AudioProcessor
-	Close() error // Close releases any resources held by the processor.
+	// Close releases any resources held by the processor (e.g., stops goroutines, frees buffers).
+	// It should be safe to call Close multiple times.
+	Close() error
 }
 
-// FFTResultProvider defines an interface for components that can provide FFT magnitude results.
-// This decouples consumers (like BandEnergyProcessor) from the specific FFT implementation, and
-// was designed with future analysis processors in mind (Band Energy, etc.). These processors will
-// use the FFTResultProvider interface to access FFT data and components things decoupled.
+// FFTResultProvider defines an interface for components that perform Fast Fourier Transform (FFT)
+// analysis and make the results available. This decouples consumers (like UDP publishers or
+// other analysis stages) from the specific FFT implementation details.
 type FFTResultProvider interface {
-	GetMagnitudes() []float64                // GetMagnitudes returns a thread-safe copy of the latest FFT magnitude spectrum.
-	GetFrequencyForBin(binIndex int) float64 // GetFrequencyForBin returns the center frequency (Hz) for a given FFT bin index.
-	GetFFTSize() int                         // GetFFTSize returns the size (number of points) of the FFT.
-	GetSampleRate() float64                  // GetSampleRate returns the sample rate used for the FFT analysis.
+	// GetMagnitudes returns a thread-safe copy of the latest calculated FFT magnitude spectrum.
+	// The length of the returned slice is typically N/2 + 1, where N is the FFT size.
+	GetMagnitudes() []float64
+
+	// GetMagnitudesInto copies the latest calculated FFT magnitude spectrum into the provided
+	// destination slice. This can help reduce allocations if the caller reuses the slice.
+	// The destination slice must be large enough to hold the results (N/2 + 1).
+	// Returns an error if the destination slice is nil or too small.
+	GetMagnitudesInto(dst []float64) error
+
+	// GetFrequencyForBin returns the center frequency (in Hz) corresponding to a specific
+	// FFT bin index.
+	GetFrequencyForBin(binIndex int) float64
+
+	// GetFFTSize returns the size (number of points, N) used for the FFT calculation.
+	GetFFTSize() int
+
+	// GetSampleRate returns the sample rate (in Hz) of the audio data used for the FFT analysis.
+	GetSampleRate() float64
 }

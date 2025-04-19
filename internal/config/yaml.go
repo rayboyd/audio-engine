@@ -2,56 +2,61 @@
 package config
 
 import (
+	applog "audio/internal/log"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-// TODO:
-// Document this struct.
+// Config represents the main application configuration structure, loaded from YAML.
 type Config struct {
-	Debug     bool            `yaml:"debug"`
-	LogLevel  string          `yaml:"log_level"`
-	Command   string          `yaml:"command,omitempty"` // A one-off command to execute. e.g., "list" to list available audio devices.
-	Audio     AudioConfig     `yaml:"audio"`
-	Recording RecordingConfig `yaml:"recording"`
-	Transport TransportConfig `yaml:"transport"`
+	Debug     bool            `yaml:"debug"`             // Enable debug mode (verbose logging, potentially other debug features).
+	LogLevel  string          `yaml:"log_level"`         // Logging level (e.g., "debug", "info", "warn", "error").
+	Command   string          `yaml:"command,omitempty"` // A one-off command to execute instead of running the engine (e.g., "list", "version").
+	Audio     AudioConfig     `yaml:"audio"`             // Audio processing settings.
+	Recording RecordingConfig `yaml:"recording"`         // Audio recording settings.
+	Transport TransportConfig `yaml:"transport"`         // Data transport settings (e.g., UDP).
 }
 
+// AudioConfig holds settings related to audio input/output and processing.
 type AudioConfig struct {
-	InputDevice       int     `yaml:"input_device"`
-	OutputDevice      int     `yaml:"output_device"`
-	SampleRate        float64 `yaml:"sample_rate"`
-	FramesPerBuffer   int     `yaml:"frames_per_buffer"`
-	LowLatency        bool    `yaml:"low_latency"`
-	InputChannels     int     `yaml:"input_channels"`
-	OutputChannels    int     `yaml:"output_channels"`
-	UseDefaultDevices bool    `yaml:"use_default_devices"`
-	FFTWindow         string  `yaml:"fft_window"`
+	InputDevice       int     `yaml:"input_device"`        // PortAudio device index for audio input (-1 for default).
+	OutputDevice      int     `yaml:"output_device"`       // PortAudio device index for audio output (-1 for default, currently unused).
+	SampleRate        float64 `yaml:"sample_rate"`         // Sample rate in Hz (e.g., 44100, 48000).
+	FramesPerBuffer   int     `yaml:"frames_per_buffer"`   // Number of audio frames per processing buffer (affects latency and FFT resolution).
+	LowLatency        bool    `yaml:"low_latency"`         // Request low latency settings from PortAudio device.
+	InputChannels     int     `yaml:"input_channels"`      // Number of input channels to capture (e.g., 1 for mono, 2 for stereo).
+	OutputChannels    int     `yaml:"output_channels"`     // Number of output channels (currently unused).
+	UseDefaultDevices bool    `yaml:"use_default_devices"` // If true, ignores InputDevice/OutputDevice and uses PortAudio defaults.
+	FFTWindow         string  `yaml:"fft_window"`          // Name of the window function for FFT analysis (e.g., "Hann", "Hamming").
 }
 
+// RecordingConfig holds settings related to audio recording functionality.
 type RecordingConfig struct {
-	Enabled     bool    `yaml:"enabled"`
-	OutputDir   string  `yaml:"output_dir"`
-	Format      string  `yaml:"format"`
-	BitDepth    int     `yaml:"bit_depth"`
-	MaxDuration int     `yaml:"max_duration_seconds"`
-	SilenceTh   float64 `yaml:"silence_threshold"`
+	Enabled     bool    `yaml:"enabled"`              // Enable audio recording to file.
+	OutputDir   string  `yaml:"output_dir"`           // Directory to save recorded audio files.
+	Format      string  `yaml:"format"`               // File format for recordings (e.g., "wav").
+	BitDepth    int     `yaml:"bit_depth"`            // Bit depth for recorded audio (e.g., 16, 24).
+	MaxDuration int     `yaml:"max_duration_seconds"` // Maximum duration of a single recording file in seconds (0 for unlimited).
+	SilenceTh   float64 `yaml:"silence_threshold"`    // Silence threshold for potential silence detection features (currently unused).
 }
 
+// TransportConfig holds settings related to sending processed data over the network.
 type TransportConfig struct {
-	UDPEnabled       bool          `yaml:"udp_enabled"`
-	UDPTargetAddress string        `yaml:"udp_target_address"`
-	UDPSendInterval  time.Duration `yaml:"udp_send_interval"`
+	UDPEnabled       bool          `yaml:"udp_enabled"`        // Enable sending FFT data over UDP.
+	UDPTargetAddress string        `yaml:"udp_target_address"` // Target address and port for UDP packets (e.g., "127.0.0.1:9090").
+	UDPSendInterval  time.Duration `yaml:"udp_send_interval"`  // Interval between sending UDP packets.
 }
 
-// TODO:
-// Document this function.
+// LoadConfig loads configuration from a YAML file specified by path.
+// If path is empty, it searches default locations ("config.yaml").
+// If no file is found, it uses built-in defaults.
+// After loading defaults or from file, it applies environment variable overrides
+// and validates the final configuration.
 func LoadConfig(path string) (*Config, error) {
 	cfg := Config{
 		Debug:    false,
@@ -83,20 +88,30 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	if path == "" {
-		// TODO:
-		// A list of OS candidates for config file location.
+		// Define potential locations for the config file.
 		candidates := []string{
 			"config.yaml",
-			// filepath.Join(os.Getenv("HOME"), ".config/config.yaml"),
-			// "/etc/config.yaml",
+			// TODO: Add platform-specific paths if desired
+			// filepath.Join(os.Getenv("HOME"), ".config/grec-v2/config.yaml"),
+			// "/etc/grec-v2/config.yaml",
 		}
+		found := false
 		for _, candidate := range candidates {
 			if _, err := os.Stat(candidate); err == nil {
 				path = candidate
+				found = true
+				applog.Debugf("Config: Found configuration file at '%s'", path)
 				break
 			}
 		}
-		if path == "" {
+		if !found {
+			// Loads the default config file if no path is provided and no config file
+			// is found, apply environment overrides, and validate the config.
+			cfg.applyEnvOverrides()
+			if err := cfg.Validate(); err != nil {
+				applog.Errorf("Config: Invalid default configuration after environment overrides: %v", err)
+				return nil, fmt.Errorf("invalid default configuration: %w", err)
+			}
 			return &cfg, nil
 		}
 	}
@@ -150,7 +165,7 @@ func (cfg *Config) applyEnvOverrides() {
 	// ENV_DEBUG
 	if val, ok := os.LookupEnv("ENV_DEBUG"); ok {
 		if bVal, err := strconv.ParseBool(val); err == nil {
-			cfg.Debug = strings.ToLower(val) == "true"
+			cfg.Debug = bVal
 			log.Printf("Config: Overriding debug from env: %v", bVal)
 		}
 	}

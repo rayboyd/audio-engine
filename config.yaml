@@ -7,7 +7,7 @@ log_level: info
 # Audio settings
 audio:
   use_default_devices: true
-  input_device: 5 # Use default (-1) or specify index
+  input_device: 6 # Use default (-1) or specify index
   output_device: -1 # Use default (-1) or specify index
   sample_rate: 44100
   frames_per_buffer: 256 # Adjust based on performance/latency needs

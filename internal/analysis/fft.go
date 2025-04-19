@@ -94,6 +94,7 @@ func NewFFTProcessor(fftSize int, sampleRate float64, windowType WindowFunc) (*F
 // This is the core real-time processing method implementing analysis.AudioProcessor.
 func (p *FFTProcessor) Process(inputBuffer []int32) {
 	// --- 1. Prepare Input & Windowing ---
+
 	p.workspace.mu.Lock() // Lock for writing to workspace buffers.
 
 	// Apply window and scale input. Zero-pad if input is shorter than fftSize.
@@ -108,14 +109,17 @@ func (p *FFTProcessor) Process(inputBuffer []int32) {
 	}
 
 	// --- 2. Perform FFT --
+
 	p.fftCalculator.Coefficients(p.workspace.fftOutput, p.workspace.input)
 
 	// --- 3. Calculate Magnitudes ---
+
 	for i, c := range p.workspace.fftOutput {
 		p.workspace.magnitude[i] = cmplx.Abs(c)
 	}
 
 	// --- 4. Unlock Workspace ---
+
 	// Release the lock now that calculations involving shared buffers are done.
 	p.workspace.mu.Unlock()
 }

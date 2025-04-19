@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	// --- Initialize PortAudio ---
+	// --- 1. Initialize PortAudio ---
 
 	if err := portaudio.Initialize(); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: Failed to initialize PortAudio: %v\n", err)
@@ -30,12 +30,12 @@ func main() {
 		}
 	}()
 
-	// --- Parse Flags ---
+	// --- 2. Parse Flags ---
 
 	configPath := flag.String("config", "", "Path to config file")
 	flag.Parse()
 
-	// --- Handle One-Off Commands ---
+	// --- 3. Handle One-Off Commands ---
 
 	if len(flag.Args()) > 0 {
 		switch flag.Args()[0] {
@@ -55,7 +55,7 @@ func main() {
 		}
 	}
 
-	// --- Load Configuration ---
+	// --- 4. Load Configuration ---
 
 	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
@@ -63,7 +63,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// --- Setup Logging ---
+	// --- 5. Setup Logging ---
 
 	logLevel, ok := applog.ParseLevel(cfg.LogLevel)
 	if !ok {
@@ -88,7 +88,7 @@ func main() {
 		applog.Debugf("Debug mode enabled.")
 	}
 
-	// --- Processing Phase (Hot Path) ---
+	// --- 6. Processing Phase (Hot Path) ---
 
 	applog.Info("Initializing audio engine...")
 	engine, err := audio.NewEngine(cfg)
@@ -115,7 +115,7 @@ func main() {
 	applog.Info("")
 	applog.Info("Shutdown signal received, stopping engine...")
 
-	// --- Shutdown Phase (Cold Path) ---
+	// --- 7. Shutdown Phase (Cold Path) ---
 
 	// PortAudio Terminate is handled by defer.
 	// Engine Close is handled by defer.
@@ -142,8 +142,6 @@ func listDevices() error {
 
 // printDeviceDetails formats and prints information about a single audio device using standard fmt.
 func printDeviceDetails(device audio.Device) {
-	// ... (implementation remains the same, using fmt) ...
-	// Determine device type
 	deviceType := "Unknown"
 	if device.MaxInputChannels > 0 && device.MaxOutputChannels > 0 {
 		deviceType = "Input/Output"
@@ -153,7 +151,6 @@ func printDeviceDetails(device audio.Device) {
 		deviceType = "Output"
 	}
 
-	// Format default marker
 	defaultMarker := ""
 	if device.IsDefaultInput && device.IsDefaultOutput {
 		defaultMarker = " (Default Input & Output)"
@@ -180,5 +177,5 @@ func printDeviceDetails(device audio.Device) {
 			device.DefaultLowOutputLatency.Seconds()*1000,
 			device.DefaultHighOutputLatency.Seconds()*1000)
 	}
-	fmt.Println() // Add a blank line for separation
+	fmt.Println()
 }
