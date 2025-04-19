@@ -87,8 +87,8 @@ func LoadConfig(path string) (*Config, error) {
 		candidates := []string{
 			"config.yaml",
 			// TODO: Add platform-specific paths if desired
-			// filepath.Join(os.Getenv("HOME"), ".config/grec-v2/config.yaml"),
-			// "/etc/grec-v2/config.yaml",
+			// filepath.Join(os.Getenv("HOME"), ".config/phase4/config.yaml"),
+			// "/etc/phase4/config.yaml",
 		}
 		found := false
 		for _, candidate := range candidates {
